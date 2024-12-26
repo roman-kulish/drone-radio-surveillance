@@ -1,0 +1,18 @@
+# Balanced Preset
+# Total sweep time: ~3-4 seconds
+# Best for: Medium-speed flights, general scanning
+---
+frequencyStart: 24000000     # 24 MHz
+frequencyEnd: 1766000000     # 1766 MHz
+binSize: 50000               # 50 kHz steps - better resolution
+interval: 0.2s               # 200ms integration
+cropPercent: 20              # Standard cropping
+gain: 35                     # Balanced gain
+smoothing: avg               # Average smoothing for better accuracy
+windowFunction: hamming      # Better spectral accuracy
+fftThreads: 2               # Parallel processing
+peakHold: true              # Keep track of peaks during interval
+---
+# Spatial resolution at different drone speeds:
+# - At 5 m/s: point every 20 meters
+# - At 10 m/s: point every 40 meters

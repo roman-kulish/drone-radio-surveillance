@@ -1,0 +1,23 @@
+# Accurate Preset
+# Total sweep time: ~5-6 seconds
+# Best for: Low-speed flights, detailed analysis
+---
+devices:
+  type: rtl-sdr
+  indexes: [0]
+sweep:
+  frequencyStart: 24000000     # 24 MHz
+  frequencyEnd: 1766000000     # 1766 MHz
+  binSize: 25000               # 25 kHz steps - fine resolution
+  interval: 0.3s               # 300ms integration
+  cropPercent: 25              # More cropping for cleaner edges
+  gain: 30                     # Lower gain for better dynamic range
+  smoothing: avg               # Average smoothing
+  windowFunction: blackman     # Good spectral leakage properties
+  fftThreads: 2               # Parallel processing
+  peakHold: true              # Track peaks
+  firSize: 9                  # Enable filter for better accuracy
+---
+# Spatial resolution at different drone speeds:
+# - At 5 m/s: point every 30 meters
+# - At 10 m/s: point every 60 meters

@@ -1,0 +1,17 @@
+# Fast Preset
+# Total sweep time: ~1-2 seconds
+# Best for: High-speed drone flights, initial surveys
+---
+frequencyStart: 24000000     # 24 MHz
+frequencyEnd: 1766000000     # 1766 MHz
+binSize: 100000              # 100 kHz steps
+interval: 0.1s               # 100ms integration
+cropPercent: 15              # Minimal cropping
+gain: 40                     # High gain
+smoothing: iir               # Fast smoothing
+windowFunction: rectangle    # Fastest window
+fftThreads: 2               # Parallel processing
+---
+# Spatial resolution at different drone speeds:
+# - At 5 m/s: point every 10 meters
+# - At 10 m/s: point every 20 meters
