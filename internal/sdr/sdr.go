@@ -46,11 +46,6 @@ type CmdArgsBuilder interface {
 	Args() []string
 }
 
-// Validator is an interface for validating configuration options
-type Validator interface {
-	Validate() error
-}
-
 type Device interface {
 	Start() (<-chan Sample, error) // Returns read-only channel and error
 	Stop() error                   // Graceful shutdown

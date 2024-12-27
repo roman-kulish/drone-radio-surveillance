@@ -58,15 +58,6 @@ func (s SmoothingMethod) String() string {
 	return string(s)
 }
 
-// DurationError is a custom error type for duration parsing and validation errors
-type DurationError struct {
-	msg string
-}
-
-func (e *DurationError) Error() string {
-	return e.msg
-}
-
 // ConfigError is a custom error type for configuration errors
 type ConfigError struct {
 	msg string
@@ -78,14 +69,14 @@ func (e *ConfigError) Error() string {
 
 type TimeDuration time.Duration
 
-func NewDuration(d time.Duration) TimeDuration {
+func NewTimeDuration(d time.Duration) TimeDuration {
 	return TimeDuration(d)
 }
 
 func (d *TimeDuration) UnmarshalYAML(value *yaml.Node) error {
 	duration, err := time.ParseDuration(value.Value)
 	if err != nil {
-		return &DurationError{fmt.Sprintf("rtl.TimeDuration: failed to parse: %s", err.Error())}
+		return fmt.Errorf("rtl.TimeDuration: failed to parse: %s", err)
 	}
 
 	*d = TimeDuration(duration)
@@ -100,11 +91,10 @@ func (d *TimeDuration) Validate() error {
 	duration := time.Duration(*d)
 
 	if duration < 0 {
-		return &DurationError{fmt.Sprintf("rtl.TimeDuration: must not be negative: %s", duration)}
+		return fmt.Errorf("rtl.TimeDuration: must not be negative: %s", duration)
 	}
-
 	if duration > 0 && duration < time.Second {
-		return &DurationError{fmt.Sprintf("rtl.TimeDuration: must be at least 1 second: %s given", duration)}
+		return fmt.Errorf("rtl.TimeDuration: must be at least 1 second: %s given", duration)
 	}
 
 	return nil
@@ -121,15 +111,9 @@ func (d *TimeDuration) String() string {
 	}
 }
 
-func (c *Config) String() string {
-	args, err := c.Args()
-	if err != nil {
-		return fmt.Sprintf("rtl.Config: invalid config: %v", err)
-	}
-	return "rtl_power " + strings.Join(args, " ")
-}
-
 // Usage examples from man page:
+// https://manpages.debian.org/bookworm/rtl-sdr/rtl_power.1.en.html
+
 /*
 Example 1: FM Band Scan
     rtlConfig := rtl.Config{
@@ -298,9 +282,9 @@ func (c *Config) Args() ([]string, error) {
 	}
 
 	// Time control
-	//if c.SingleShot {
+	// if c.SingleShot {
 	//	args = append(args, "-1")
-	//}
+	// }
 
 	if c.ExitTimer > 0 {
 		args = append(args, "-e", c.ExitTimer.String())
@@ -346,11 +330,18 @@ func (c *Config) Args() ([]string, error) {
 	}
 
 	// Add output file if specified
-	//if c.OutputFile != "" {
-	//	args = append(args, c.OutputFile)
-	//}
-
+	// if c.OutputFile != "" {
+	// 	args = append(args, c.OutputFile)
+	// }
 	args = append(args, "-") // Always dump to stdout
 
 	return args, nil
+}
+
+func (c *Config) String() string {
+	args, err := c.Args()
+	if err != nil {
+		return fmt.Sprintf("rtl.Config: invalid config: %v", err)
+	}
+	return "rtl_power " + strings.Join(args, " ")
 }
