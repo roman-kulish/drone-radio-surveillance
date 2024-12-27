@@ -2,6 +2,7 @@ package sdr
 
 import "time"
 
+// Sample represents a single sample from the SDR
 type Sample struct {
 	// Timestamp information
 	Timestamp time.Time
@@ -20,35 +21,47 @@ type Sample struct {
 	DeviceID string // Serial number or index
 }
 
-type Telemetry struct {
-	Latitude      float64
-	Longitude     float64
-	Altitude      float64
-	Roll          float64
-	Pitch         float64
-	Yaw           float64
-	AccelX        float64
-	AccelY        float64
-	AccelZ        float64
-	NumSatellites uint8
-	GroundSpeed   uint16
-	GroundCourse  uint16
-	RadioRSSI     int
-}
-
 // FrequencyCenter is a helper method to get center frequency
 func (s *Sample) FrequencyCenter() int64 {
 	return s.FrequencyLow + (s.BinWidth / 2)
 }
 
-// CmdArgsBuilder is an interface for building command line arguments for SDR tools
-type CmdArgsBuilder interface {
-	Args() []string
-}
+// // Telemetry is the telemetry data from the drone sensors
+// type Telemetry struct {
+// 	// Barometer
+// 	Altitude float64
+//
+// 	// Gyroscope
+// 	Roll  float64
+// 	Pitch float64
+// 	Yaw   float64
+//
+// 	// Accelerometer
+// 	AccelX float64
+// 	AccelY float64
+// 	AccelZ float64
+//
+// 	// GPS
+// 	Latitude    float64
+// 	Longitude   float64
+// 	GroundSpeed uint16
+//
+// 	// Magnetometer
+// 	GroundCourse uint16
+//
+// 	// Radio
+// 	RadioRSSI int
+// }
+//
+// // EnrichedSample is a Sample with telemetry
+// type EnrichedSample struct {
+// 	Sample
+// 	Telemetry
+// }
 
-type Device interface {
-	Start() (<-chan Sample, error) // Returns read-only channel and error
-	Stop() error                   // Graceful shutdown
-	Status() DeviceStatus          // Current device state
-	ID() string                    // Unique device identifier
-}
+// type Device interface {
+// 	Start() (<-chan Sample, error) // Returns read-only channel and error
+// 	Stop() error                   // Graceful shutdown
+// 	Status() DeviceStatus          // Current device state
+// 	ID() string                    // Unique device identifier
+// }
