@@ -3,10 +3,10 @@ package rtl
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/driver"
 )
 
 const (
@@ -56,15 +56,6 @@ type SmoothingMethod string
 
 func (s SmoothingMethod) String() string {
 	return string(s)
-}
-
-// ConfigError is a custom error type for configuration errors
-type ConfigError struct {
-	msg string
-}
-
-func (e *ConfigError) Error() string {
-	return e.msg
 }
 
 type TimeDuration time.Duration
@@ -160,9 +151,11 @@ type Config struct {
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
 
-	DeviceIndex int `yaml:"deviceIndex"` // -d device_index (default: 0)
-	Gain        int `yaml:"gain"`        // -g tuner_gain (default: automatic)
-	PPMError    int `yaml:"ppmError"`    // -p ppm_error (default: 0)
+	// Configured externally
+	// DeviceIndex int `yaml:"deviceIndex"` // -d device_index (default: 0)
+
+	Gain     int `yaml:"gain"`     // -g tuner_gain (default: automatic)
+	PPMError int `yaml:"ppmError"` // -p ppm_error (default: 0)
 
 	// Always dump to stdout
 	// OutputFile  string // filename (a '-' dumps samples to stdout)
@@ -198,54 +191,54 @@ type Config struct {
 func (c *Config) Validate() error {
 	// Validate required fields
 	if c.FrequencyStart <= 0 {
-		return &ConfigError{fmt.Sprintf("rtl.Config: frequency start must be positive: %d", c.FrequencyStart)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency start must be positive: %d", c.FrequencyStart))
 	}
 	if c.FrequencyEnd <= 0 {
-		return &ConfigError{fmt.Sprintf("rtl.Config: frequency end must be positive: %d", c.FrequencyEnd)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency end must be positive: %d", c.FrequencyEnd))
 	}
 	if c.FrequencyEnd <= c.FrequencyStart {
-		return &ConfigError{fmt.Sprintf("rtl.Config: frequency end must be greater than start: %d <= %d", c.FrequencyEnd, c.FrequencyStart)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency end must be greater than start: %d <= %d", c.FrequencyEnd, c.FrequencyStart))
 	}
 
 	// Validate bin size
 	if c.BinSize < BinSizeMin || c.BinSize > BinSizeMax {
-		return &ConfigError{fmt.Sprintf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinSize, BinSizeMin, BinSizeMax)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinSize, BinSizeMin, BinSizeMax))
 	}
 
 	// Validate time specifications
 	if c.Interval > 0 {
 		if err := c.Interval.Validate(); err != nil {
-			return &ConfigError{fmt.Sprintf("rtl.Config: invalid interval: %s", err.Error())}
+			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid interval: %s", err.Error()))
 		}
 	}
 	if c.ExitTimer > 0 {
 		if err := c.ExitTimer.Validate(); err != nil {
-			return &ConfigError{fmt.Sprintf("rtl.Config: invalid exit timer: %s", err.Error())}
+			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid exit timer: %s", err.Error()))
 		}
 	}
 
 	// Validate window function
 	if c.WindowFunction != "" {
 		if _, ok := validWindowFunctions[c.WindowFunction]; !ok {
-			return &ConfigError{fmt.Sprintf("rtl.Config: invalid window function: %s", c.WindowFunction)}
+			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid window function: %s", c.WindowFunction))
 		}
 	}
 
 	// Validate smoothing method
 	if c.Smoothing != "" {
 		if _, ok := validSmoothingMethods[c.Smoothing]; !ok {
-			return &ConfigError{fmt.Sprintf("rtl.Config: invalid smoothing method: %s", c.Smoothing)}
+			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid smoothing method: %s", c.Smoothing))
 		}
 	}
 
 	// Validate crop percent
 	if c.CropPercent < 0 || c.CropPercent > 100 {
-		return &ConfigError{fmt.Sprintf("rtl.Config: crop percent must be between 0 and 100: %d given", c.CropPercent)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: crop percent must be between 0 and 100: %d given", c.CropPercent))
 	}
 
 	// Validate FIR size
 	if c.FIRSize != nil && *c.FIRSize != 0 && *c.FIRSize != 9 {
-		return &ConfigError{fmt.Sprintf("rtl.Config: FIR size must be 0 or 9: %d given", *c.FIRSize)}
+		return driver.NewConfigError(fmt.Sprintf("rtl.Config: FIR size must be 0 or 9: %d given", *c.FIRSize))
 	}
 
 	return nil
@@ -254,7 +247,7 @@ func (c *Config) Validate() error {
 // Args returns the command line arguments for `rtl_power`
 // See `man rtl_power` for more information:
 // https://manpages.debian.org/bookworm/rtl-sdr/rtl_power.1.en.html
-func (c *Config) Args() ([]string, error) {
+func (c *Config) Args(deviceIndex int) ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -271,7 +264,7 @@ func (c *Config) Args() ([]string, error) {
 		args = append(args, "-i", c.Interval.String())
 	}
 
-	args = append(args, "-d", strconv.Itoa(c.DeviceIndex)) // 0 is the default device index
+	args = append(args, "-d", strconv.Itoa(deviceIndex)) // 0 is the default device index
 
 	if c.Gain > 0 {
 		args = append(args, "-g", strconv.Itoa(c.Gain))
@@ -336,12 +329,4 @@ func (c *Config) Args() ([]string, error) {
 	args = append(args, "-") // Always dump to stdout
 
 	return args, nil
-}
-
-func (c *Config) String() string {
-	args, err := c.Args()
-	if err != nil {
-		return fmt.Sprintf("rtl.Config: invalid config: %v", err)
-	}
-	return "rtl_power " + strings.Join(args, " ")
 }

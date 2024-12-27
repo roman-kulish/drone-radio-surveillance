@@ -3,7 +3,8 @@ package hackrf
 import (
 	"fmt"
 	"strconv"
-	"strings"
+
+	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/driver"
 )
 
 const (
@@ -13,15 +14,6 @@ const (
 	LNAGainStep   = 8
 	VGAGainStep   = 2
 )
-
-// ConfigError is a custom error type for configuration errors
-type ConfigError struct {
-	msg string
-}
-
-func (e *ConfigError) Error() string {
-	return e.msg
-}
 
 // Usage examples from man page:
 // https://manpages.debian.org/bookworm/hackrf/hackrf_sweep.1.en.html
@@ -51,9 +43,12 @@ type Config struct {
 	NumSamples int64 // -n num_samples Number of samples per frequency, 8192-4294967296
 
 	// Optional - Advanced Configuration
-	SerialNumber string // -d serial_number Serial number of desired HackRF
-	EnableAmp    bool   // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
-	AntennaPower bool   // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
+
+	// Configured externally
+	// SerialNumber string // -d serial_number Serial number of desired HackRF
+
+	EnableAmp    bool // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
+	AntennaPower bool // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
 
 	// Always run scan continuously
 	// OneShot      bool   // -1 One shot mode
@@ -77,37 +72,37 @@ type Config struct {
 func (c *Config) Validate() error {
 	// Frequency range validation
 	if c.FrequencyStart >= c.FrequencyEnd {
-		return &ConfigError{"hackrf.Config: frequency end must be greater than frequency start"}
+		return driver.NewConfigError("hackrf.Config: frequency end must be greater than frequency start")
 	}
 
 	// LNA gain validation (0-40dB in 8dB steps)
 	if c.LNAGain != nil {
 		if *c.LNAGain < 0 || *c.LNAGain > MaxLNAGain {
-			return &ConfigError{fmt.Sprintf("hackrf.Config: LNA gain must be between 0 and 40 dB: %d given", *c.LNAGain)}
+			return driver.NewConfigError(fmt.Sprintf("hackrf.Config: LNA gain must be between 0 and 40 dB: %d given", *c.LNAGain))
 		}
 		if *c.LNAGain%LNAGainStep != 0 {
-			return &ConfigError{"hackrf.Config: LNA gain must be a multiple of 8 dB"}
+			return driver.NewConfigError("hackrf.Config: LNA gain must be a multiple of 8 dB")
 		}
 	}
 
 	// VGA gain validation (0-62dB in 2dB steps)
 	if c.VGAGain != nil {
 		if *c.VGAGain < 0 || *c.VGAGain > MaxVGAGain {
-			return &ConfigError{fmt.Sprintf("hackrf.Config: VGA gain must be between 0 and 62 dB: %d given", *c.VGAGain)}
+			return driver.NewConfigError(fmt.Sprintf("hackrf.Config: VGA gain must be between 0 and 62 dB: %d given", *c.VGAGain))
 		}
 		if *c.VGAGain%VGAGainStep != 0 {
-			return &ConfigError{"hackrf.Config: VGA gain must be a multiple of 2 dB"}
+			return driver.NewConfigError("hackrf.Config: VGA gain must be a multiple of 2 dB")
 		}
 	}
 
 	// NumSamples validation (if specified)
 	if c.NumSamples > 0 && c.NumSamples < MinNumSamples {
-		return &ConfigError{fmt.Sprintf("hackrf.Config: number of samples must be at least 8192: %d given", c.NumSamples)}
+		return driver.NewConfigError(fmt.Sprintf("hackrf.Config: number of samples must be at least 8192: %d given", c.NumSamples))
 	}
 
 	// NumSweeps validation (if specified)
 	if c.NumSweeps < 0 {
-		return &ConfigError{fmt.Sprintf("hackrf.Config: number of sweeps cannot be negative: %d given", c.NumSweeps)}
+		return driver.NewConfigError(fmt.Sprintf("hackrf.Config: number of sweeps cannot be negative: %d given", c.NumSweeps))
 	}
 
 	return nil
@@ -116,7 +111,7 @@ func (c *Config) Validate() error {
 // Args builds the command line arguments for `hackrf_sweep`
 // See `man hackrf_sweep` for more information:
 // https://manpages.debian.org/bookworm/hackrf/hackrf_sweep.1.en.html
-func (c *Config) Args() ([]string, error) {
+func (c *Config) Args(serialNumber string) ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -127,8 +122,8 @@ func (c *Config) Args() ([]string, error) {
 			c.FrequencyEnd/1e6),
 	}
 
-	if c.SerialNumber != "" {
-		args = append(args, "-d", c.SerialNumber)
+	if serialNumber != "" {
+		args = append(args, "-d", serialNumber)
 	}
 
 	if c.BinWidth > 0 {
@@ -179,12 +174,4 @@ func (c *Config) Args() ([]string, error) {
 	// }
 
 	return args, nil
-}
-
-func (c *Config) String() string {
-	args, err := c.Args()
-	if err != nil {
-		return fmt.Sprintf("hackrf.Config: invalid config: %v", err)
-	}
-	return "hackrf_sweep " + strings.Join(args, " ")
 }
