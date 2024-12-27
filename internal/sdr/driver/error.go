@@ -12,16 +12,3 @@ func NewConfigError(msg string) *ConfigError {
 func (e *ConfigError) Error() string {
 	return e.msg
 }
-
-// RuntimeError is a custom error type for runtime errors
-type RuntimeError struct {
-	msg string
-}
-
-func NewRuntimeError(msg string) *RuntimeError {
-	return &RuntimeError{msg}
-}
-
-func (e *RuntimeError) Error() string {
-	return e.msg
-}
