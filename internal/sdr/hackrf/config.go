@@ -1,10 +1,9 @@
 package hackrf
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
-
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/driver"
 )
 
 const (
@@ -33,27 +32,27 @@ const (
 // Config is a struct for configuring the `hackrf_sweep` tool
 type Config struct {
 	// Required
-	FrequencyStart int64 // -f freq_min Frequency range start in MHz
-	FrequencyEnd   int64 // -f freq_max Frequency range end in MHz
+	FrequencyStart int64 `yaml:"frequencyStart"` // -f freq_min Frequency range start in MHz
+	FrequencyEnd   int64 `yaml:"frequencyEnd"`   // -f freq_max Frequency range end in MHz
 
 	// Important but Optional (have reasonable defaults)
-	LNAGain    *int  // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
-	VGAGain    *int  // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
-	BinWidth   int64 // -w bin_width FFT bin width (frequency resolution) in Hz
-	NumSamples int64 // -n num_samples Number of samples per frequency, 8192-4294967296
+	LNAGain    *int  `yaml:"lnaGain"`    // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
+	VGAGain    *int  `yaml:"vgaGain"`    // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
+	BinWidth   int64 `yaml:"binWidth"`   // -w bin_width FFT bin width (frequency resolution) in Hz
+	NumSamples int64 `yaml:"numSamples"` // -n num_samples Number of samples per frequency, 8192-4294967296
 
 	// Optional - Advanced Configuration
 
 	// Configured externally
 	// SerialNumber string // -d serial_number Serial number of desired HackRF
 
-	EnableAmp    bool // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
-	AntennaPower bool // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
+	EnableAmp    bool `yaml:"enableAmp"`    // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
+	AntennaPower bool `yaml:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
 
 	// Always run scan continuously
 	// OneShot      bool   // -1 One shot mode
 
-	NumSweeps int // -N num_sweeps Number of sweeps to perform
+	NumSweeps int `yaml:"numSweeps"` // -N num_sweeps Number of sweeps to perform
 
 	// For the sake of consistency with `rtl_power`,
 	// BinaryOutput bool // -B Binary output
@@ -72,37 +71,37 @@ type Config struct {
 func (c *Config) Validate() error {
 	// Frequency range validation
 	if c.FrequencyStart >= c.FrequencyEnd {
-		return driver.NewConfigError("hackrf.Config: frequency end must be greater than frequency start")
+		return errors.New("hackrf.Config: frequency end must be greater than frequency start")
 	}
 
 	// LNA gain validation (0-40dB in 8dB steps)
 	if c.LNAGain != nil {
 		if *c.LNAGain < 0 || *c.LNAGain > MaxLNAGain {
-			return driver.NewConfigError(fmt.Sprintf("hackrf.Config: LNA gain must be between 0 and 40 dB: %d given", *c.LNAGain))
+			return fmt.Errorf("hackrf.Config: LNA gain must be between 0 and 40 dB: %d given", *c.LNAGain)
 		}
 		if *c.LNAGain%LNAGainStep != 0 {
-			return driver.NewConfigError("hackrf.Config: LNA gain must be a multiple of 8 dB")
+			return errors.New("hackrf.Config: LNA gain must be a multiple of 8 dB")
 		}
 	}
 
 	// VGA gain validation (0-62dB in 2dB steps)
 	if c.VGAGain != nil {
 		if *c.VGAGain < 0 || *c.VGAGain > MaxVGAGain {
-			return driver.NewConfigError(fmt.Sprintf("hackrf.Config: VGA gain must be between 0 and 62 dB: %d given", *c.VGAGain))
+			return fmt.Errorf("hackrf.Config: VGA gain must be between 0 and 62 dB: %d given", *c.VGAGain)
 		}
 		if *c.VGAGain%VGAGainStep != 0 {
-			return driver.NewConfigError("hackrf.Config: VGA gain must be a multiple of 2 dB")
+			return errors.New("hackrf.Config: VGA gain must be a multiple of 2 dB")
 		}
 	}
 
 	// NumSamples validation (if specified)
 	if c.NumSamples > 0 && c.NumSamples < MinNumSamples {
-		return driver.NewConfigError(fmt.Sprintf("hackrf.Config: number of samples must be at least 8192: %d given", c.NumSamples))
+		return fmt.Errorf("hackrf.Config: number of samples must be at least 8192: %d given", c.NumSamples)
 	}
 
 	// NumSweeps validation (if specified)
 	if c.NumSweeps < 0 {
-		return driver.NewConfigError(fmt.Sprintf("hackrf.Config: number of sweeps cannot be negative: %d given", c.NumSweeps))
+		return fmt.Errorf("hackrf.Config: number of sweeps cannot be negative: %d given", c.NumSweeps)
 	}
 
 	return nil

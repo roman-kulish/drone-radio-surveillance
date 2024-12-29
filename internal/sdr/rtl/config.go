@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/driver"
 )
 
 const (
@@ -175,7 +174,7 @@ type Config struct {
 
 	// Advanced/Experimental Options
 	WindowFunction WindowFunction `yaml:"windowFunction"` // -w window (default: rectangle)
-	CropPercent    int            `yaml:"cropPercent"`    // -c crop_percent (default: 0%, recommended: 20%-50%)
+	CropPercent    float32        `yaml:"cropPercent"`    // -c crop_percent (default: 0%, recommended: 20%-50%)
 	FIRSize        *int           `yaml:"firSize"`        // -F fir_size (default: disabled, can be 0 or 9)
 
 	// Hardware Options
@@ -191,54 +190,54 @@ type Config struct {
 func (c *Config) Validate() error {
 	// Validate required fields
 	if c.FrequencyStart <= 0 {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency start must be positive: %d", c.FrequencyStart))
+		return fmt.Errorf("rtl.Config: frequency start must be positive: %d", c.FrequencyStart)
 	}
 	if c.FrequencyEnd <= 0 {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency end must be positive: %d", c.FrequencyEnd))
+		return fmt.Errorf("rtl.Config: frequency end must be positive: %d", c.FrequencyEnd)
 	}
 	if c.FrequencyEnd <= c.FrequencyStart {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: frequency end must be greater than start: %d <= %d", c.FrequencyEnd, c.FrequencyStart))
+		return fmt.Errorf("rtl.Config: frequency end must be greater than start: %d <= %d", c.FrequencyEnd, c.FrequencyStart)
 	}
 
 	// Validate bin size
 	if c.BinSize < BinSizeMin || c.BinSize > BinSizeMax {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinSize, BinSizeMin, BinSizeMax))
+		return fmt.Errorf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinSize, BinSizeMin, BinSizeMax)
 	}
 
 	// Validate time specifications
 	if c.Interval > 0 {
 		if err := c.Interval.Validate(); err != nil {
-			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid interval: %s", err.Error()))
+			return fmt.Errorf("rtl.Config: invalid interval: %w", err)
 		}
 	}
 	if c.ExitTimer > 0 {
 		if err := c.ExitTimer.Validate(); err != nil {
-			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid exit timer: %s", err.Error()))
+			return fmt.Errorf("rtl.Config: invalid exit timer: %w", err)
 		}
 	}
 
 	// Validate window function
 	if c.WindowFunction != "" {
 		if _, ok := validWindowFunctions[c.WindowFunction]; !ok {
-			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid window function: %s", c.WindowFunction))
+			return fmt.Errorf("rtl.Config: invalid window function: %s", c.WindowFunction)
 		}
 	}
 
 	// Validate smoothing method
 	if c.Smoothing != "" {
 		if _, ok := validSmoothingMethods[c.Smoothing]; !ok {
-			return driver.NewConfigError(fmt.Sprintf("rtl.Config: invalid smoothing method: %s", c.Smoothing))
+			return fmt.Errorf("rtl.Config: invalid smoothing method: %s", c.Smoothing)
 		}
 	}
 
 	// Validate crop percent
-	if c.CropPercent < 0 || c.CropPercent > 100 {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: crop percent must be between 0 and 100: %d given", c.CropPercent))
+	if c.CropPercent < 0 || c.CropPercent > 1 {
+		return fmt.Errorf("rtl.Config: crop percent must be between 0 and 1: %0.2f given", c.CropPercent)
 	}
 
 	// Validate FIR size
 	if c.FIRSize != nil && *c.FIRSize != 0 && *c.FIRSize != 9 {
-		return driver.NewConfigError(fmt.Sprintf("rtl.Config: FIR size must be 0 or 9: %d given", *c.FIRSize))
+		return fmt.Errorf("rtl.Config: FIR size must be 0 or 9: %d given", *c.FIRSize)
 	}
 
 	return nil
@@ -298,7 +297,7 @@ func (c *Config) Args(deviceIndex int) ([]string, error) {
 	}
 
 	if c.CropPercent > 0 {
-		args = append(args, "-c", strconv.Itoa(c.CropPercent))
+		args = append(args, "-c", strconv.FormatFloat(float64(c.CropPercent), 'f', 2, 32))
 	}
 
 	if c.FIRSize != nil {
