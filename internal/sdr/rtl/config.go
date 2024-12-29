@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	BinSizeMin = 1
-	BinSizeMax = 2_800_000
+	BinWidthMin = 1
+	BinWidthMax = 2_800_000
 
 	// WindowFunctionRectangle is the default window function
 	WindowFunctionRectangle      WindowFunction = "rectangle"
@@ -109,7 +109,7 @@ Example 1: FM Band Scan
     rtlConfig := rtl.Config{
         FrequencyStart: 88_000_000,   // 88 MHz
         FrequencyEnd:   108_000_000,  // 108 MHz
-        BinSize:        125_000,      // 125 kHz
+        BinWidth:        125_000,      // 125 kHz
     }
     // Executes: rtl_power -f 88M:108M:125k -
     // Creates 160 bins across the FM band, individual stations should be visible
@@ -118,7 +118,7 @@ Example 2: Wide Range Survey
     rtlConfig := rtl.Config{
         FrequencyStart: 100_000_000,  // 100 MHz
         FrequencyEnd:   1_000_000_000,// 1 GHz
-        BinSize:        1_000_000,    // 1 MHz
+        BinWidth:        1_000_000,    // 1 MHz
         Interval:       "5m",         // 5 minutes
         SingleShot:     true,
     }
@@ -129,7 +129,7 @@ Example 3: Timed Collection
     rtlConfig := rtl.Config{
         FrequencyStart: 824_000_000,  // 824 MHz
         FrequencyEnd:   849_000_000,  // 849 MHz
-        BinSize:        12_500,       // 12.5 kHz
+        BinWidth:        12_500,       // 12.5 kHz
         Interval:       "15m",        // 15 minutes
         SingleShot:     true,
     }
@@ -142,7 +142,7 @@ type Config struct {
 	// Required
 	FrequencyStart int64 `yaml:"frequencyStart"` // -f lower Frequency range start (Hz)
 	FrequencyEnd   int64 `yaml:"frequencyEnd"`   // -f upper Frequency range end (Hz)
-	BinSize        int64 `yaml:"binSize"`        // -f bin_size Bin size in Hz (valid range 1Hz - 2.8MHz)
+	BinWidth       int64 `yaml:"binWidth"`       // -f bin_size Bin size in Hz (valid range 1Hz - 2.8MHz)
 
 	// Common Optional Parameters
 	Interval TimeDuration `yaml:"interval"` // -i integration_interval (default: 10 seconds)
@@ -200,8 +200,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate bin size
-	if c.BinSize < BinSizeMin || c.BinSize > BinSizeMax {
-		return fmt.Errorf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinSize, BinSizeMin, BinSizeMax)
+	if c.BinWidth < BinWidthMin || c.BinWidth > BinWidthMax {
+		return fmt.Errorf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinWidth, BinWidthMin, BinWidthMax)
 	}
 
 	// Validate time specifications
@@ -255,7 +255,7 @@ func (c *Config) Args(deviceIndex int) ([]string, error) {
 		"-f", fmt.Sprintf("%d:%d:%d",
 			c.FrequencyStart,
 			c.FrequencyEnd,
-			c.BinSize),
+			c.BinWidth),
 	}
 
 	// Common parameters

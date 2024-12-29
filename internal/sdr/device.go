@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -81,7 +83,7 @@ func NewDevice(deviceID string, h Handler, options ...func(d *Device)) *Device {
 }
 
 // BeginSampling starts the device and collects samples, sending them to the samples channel
-func (d *Device) BeginSampling(ctx context.Context, samples chan<- Sample) (<-chan struct{}, error) {
+func (d *Device) BeginSampling(ctx context.Context, samples chan<- Sample) (<-chan error, error) {
 	if d.isSampling.Load() {
 		return nil, fmt.Errorf("device is already running")
 	}
@@ -108,13 +110,11 @@ func (d *Device) BeginSampling(ctx context.Context, samples chan<- Sample) (<-ch
 		return nil, fmt.Errorf("error starting command: %w", err)
 	}
 
-	samplingStopped := make(chan struct{})
+	samplingStopped := make(chan error)
 
 	d.wg.Add(1)
 	go func() {
-		defer d.isSampling.Store(false)
 		defer close(samplingStopped)
-		defer d.wg.Done()
 
 		d.logger.Info("starting samples collection...")
 
@@ -124,16 +124,26 @@ func (d *Device) BeginSampling(ctx context.Context, samples chan<- Sample) (<-ch
 		go d.handleStderr(stderr, done)
 		go d.handleCmdWait(cmd, done)
 
+		var errs []error
 		for i := 0; i < cap(done); i++ {
 			if err := <-done; err != nil {
 				d.cancel() // cancel context on error
 				d.logger.Error(err.Error())
+
+				errs = append(errs, err)
 			}
 		}
 
 		close(done)
 
 		d.logger.Info("samples collection stopped")
+
+		d.isSampling.Store(false)
+		d.wg.Done()
+
+		if len(errs) > 0 {
+			samplingStopped <- errors.Join(errs...)
+		}
 	}()
 
 	return samplingStopped, nil
@@ -161,9 +171,15 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, samples chan<- 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
+		line = strings.TrimSpace(line)
+
+		if line == "" {
+			continue
+		}
+
 		if err := d.handler.Parse(line, deviceID, samples); err != nil {
 			parseErrors++
-			d.logger.Error(fmt.Sprintf("error parsing samples: %s", err.Error()), slog.String("line", line))
+			d.logger.Warn(fmt.Sprintf("error parsing samples: %s", err.Error()), slog.String("line", line))
 
 			if parseErrors >= d.parseErrorsThreshold {
 				done <- ErrTooManyParseErrors
@@ -175,7 +191,7 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, samples chan<- 
 
 		parseErrors = 0 // reset counter
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, fs.ErrClosed) {
 		done <- fmt.Errorf("%w: error reading stdout: %w", ErrBrokenPipe, err)
 		return
 	}
@@ -188,9 +204,15 @@ func (d *Device) handleStderr(stderr io.Reader, done chan<- error) {
 	scanner := bufio.NewScanner(stderr)
 	for scanner.Scan() {
 		line := scanner.Text()
-		d.logger.Info(fmt.Sprintf("%s >> %s", d.handler.Device(), line)) // simple logging here
+		line = strings.TrimSpace(line)
+
+		if line == "" {
+			continue
+		}
+
+		d.logger.Warn(fmt.Sprintf("%s >> %s", d.handler.Device(), line)) // simple logging here
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) {
+	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, fs.ErrClosed) {
 		done <- fmt.Errorf("%w: error reading stderr: %w", ErrBrokenPipe, err)
 		return
 	}

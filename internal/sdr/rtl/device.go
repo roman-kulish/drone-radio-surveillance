@@ -56,15 +56,17 @@ func (h handler) Parse(line string, deviceID string, samples chan<- sdr.Sample) 
 		return fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	// Parse frequency range and bin information
+	// Parse low frequency, bin information and number of samples
+	// Note that the high frequency is not used, because the low frequency and
+	// bin size are used to calculate the center frequency of each bin.
 	freqLow, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
 	if err != nil {
 		return fmt.Errorf("invalis start frequency: %w", err)
 	}
 
-	binSize, err := strconv.ParseFloat(strings.TrimSpace(fields[4]), 64)
+	binWidth, err := strconv.ParseFloat(strings.TrimSpace(fields[4]), 64)
 	if err != nil {
-		return fmt.Errorf("invalid bin size: %w", err)
+		return fmt.Errorf("invalid bin width: %w", err)
 	}
 
 	numSamples, err := strconv.Atoi(strings.TrimSpace(fields[5]))
@@ -80,13 +82,13 @@ func (h handler) Parse(line string, deviceID string, samples chan<- sdr.Sample) 
 		}
 
 		// Calculate center frequency for this bin
-		centerFreq := freqLow + (float64(i) * binSize) + (binSize / 2)
+		centerFreq := freqLow + (float64(i) * binWidth) + (binWidth / 2)
 
 		sample := sdr.Sample{
 			Timestamp:  timestamp,
 			Frequency:  centerFreq,
 			Power:      power,
-			BinWidth:   binSize,
+			BinWidth:   binWidth,
 			NumSamples: numSamples,
 			Device:     Device,
 			DeviceID:   deviceID,
