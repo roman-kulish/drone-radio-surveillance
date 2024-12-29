@@ -140,12 +140,12 @@ Example 3: Timed Collection
 // Config is the `rtl_power` tool configuration
 type Config struct {
 	// Required
-	FrequencyStart int64 `yaml:"frequencyStart"` // -f lower Frequency range start (Hz)
-	FrequencyEnd   int64 `yaml:"frequencyEnd"`   // -f upper Frequency range end (Hz)
-	BinWidth       int64 `yaml:"binWidth"`       // -f bin_size Bin size in Hz (valid range 1Hz - 2.8MHz)
+	FrequencyStart int64 `yaml:"frequencyStart" json:"frequencyStart"` // -f lower Frequency range start (Hz)
+	FrequencyEnd   int64 `yaml:"frequencyEnd" json:"frequencyEnd"`     // -f upper Frequency range end (Hz)
+	BinWidth       int64 `yaml:"binWidth" json:"binWidth"`             // -f bin_size Bin size in Hz (valid range 1Hz - 2.8MHz)
 
 	// Common Optional Parameters
-	Interval TimeDuration `yaml:"interval"` // -i integration_interval (default: 10 seconds)
+	Interval TimeDuration `yaml:"interval" json:"interval"` // -i integration_interval (default: 10 seconds)
 	// Time units: 's' seconds, 'm' minutes, 'h' hours
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
@@ -153,8 +153,8 @@ type Config struct {
 	// Configured externally
 	// DeviceIndex int `yaml:"deviceIndex"` // -d device_index (default: 0)
 
-	Gain     int `yaml:"gain"`     // -g tuner_gain (default: automatic)
-	PPMError int `yaml:"ppmError"` // -p ppm_error (default: 0)
+	Gain     int `yaml:"gain" json:"gain"`         // -g tuner_gain (default: automatic)
+	PPMError int `yaml:"ppmError" json:"ppmError"` // -p ppm_error (default: 0)
 
 	// Always dump to stdout
 	// OutputFile  string // filename (a '-' dumps samples to stdout)
@@ -163,25 +163,25 @@ type Config struct {
 	// Always do continuous scans
 	// SingleShot bool `yaml:"singleShot"` // -1 enables single-shot mode (default: off)
 
-	ExitTimer TimeDuration `yaml:"exitTimer"` // -e exit_timer (default: off/0)
+	ExitTimer TimeDuration `yaml:"exitTimer" json:"exitTimer"` // -e exit_timer (default: off/0)
 	// Time units: 's' seconds, 'm' minutes, 'h' hours
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
 
 	// Processing Options
-	Smoothing  SmoothingMethod `yaml:"smoothing"`  // -s [avg|iir] Smoothing (default: avg)
-	FFTThreads int             `yaml:"fftThreads"` // -t threads Number of FFT threads
+	Smoothing  SmoothingMethod `yaml:"smoothing" json:"smoothing"`   // -s [avg|iir] Smoothing (default: avg)
+	FFTThreads int             `yaml:"fftThreads" json:"fftThreads"` // -t threads Number of FFT threads
 
 	// Advanced/Experimental Options
-	WindowFunction WindowFunction `yaml:"windowFunction"` // -w window (default: rectangle)
-	CropPercent    float32        `yaml:"cropPercent"`    // -c crop_percent (default: 0%, recommended: 20%-50%)
-	FIRSize        *int           `yaml:"firSize"`        // -F fir_size (default: disabled, can be 0 or 9)
+	WindowFunction WindowFunction `yaml:"windowFunction" json:"windowFunction"` // -w window (default: rectangle)
+	CropPercent    float32        `yaml:"cropPercent" json:"cropPercent"`       // -c crop_percent (default: 0%, recommended: 20%-50%)
+	FIRSize        *int           `yaml:"firSize" json:"firSize"`               // -F fir_size (default: disabled, can be 0 or 9)
 
 	// Hardware Options
-	PeakHold       bool `yaml:"peakHold"`       // -P enables peak hold (default: off)
-	DirectSampling bool `yaml:"directSampling"` // -D enable direct sampling (default: off)
-	OffsetTuning   bool `yaml:"offsetTuning"`   // -O enable offset tuning (default: off)
-	BiasTee        bool `yaml:"biasTee"`        // -T enable bias-tee (default: off)
+	PeakHold       bool `yaml:"peakHold" json:"peakHold"`             // -P enables peak hold (default: off)
+	DirectSampling bool `yaml:"directSampling" json:"directSampling"` // -D enable direct sampling (default: off)
+	OffsetTuning   bool `yaml:"offsetTuning" json:"offsetTuning"`     // -O enable offset tuning (default: off)
+	BiasTee        bool `yaml:"biasTee" json:"biasTee"`               // -T enable bias-tee (default: off)
 
 	// Example invocation:
 	// rtl_power -f 824M:849M:12.5k -i 10s -g 50

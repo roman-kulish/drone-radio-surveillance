@@ -15,7 +15,7 @@ type SweepResult struct {
 	Timestamp  time.Time      // Timestamp information
 	BinWidth   float64        // Hz step/bin width
 	NumSamples int            // Number of samples used for this measurement
-	Samples    []PowerReading // Samples contains a collection of power readings for a sweep result.
+	Readings   []PowerReading // Samples contains a collection of power readings for a sweep result.
 	Device     string         // Device type (e.g., "rtl-sdr", "hackrf")
 	DeviceID   string         // Serial number or index (human-readable)
 }

@@ -32,27 +32,27 @@ const (
 // Config is a struct for configuring the `hackrf_sweep` tool
 type Config struct {
 	// Required
-	FrequencyStart int64 `yaml:"frequencyStart"` // -f freq_min Frequency range start in MHz
-	FrequencyEnd   int64 `yaml:"frequencyEnd"`   // -f freq_max Frequency range end in MHz
+	FrequencyStart int64 `yaml:"frequencyStart" json:"frequencyStart"` // -f freq_min Frequency range start in MHz
+	FrequencyEnd   int64 `yaml:"frequencyEnd" json:"frequencyEnd"`     // -f freq_max Frequency range end in MHz
 
 	// Important but Optional (have reasonable defaults)
-	LNAGain    *int  `yaml:"lnaGain"`    // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
-	VGAGain    *int  `yaml:"vgaGain"`    // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
-	BinWidth   int64 `yaml:"binWidth"`   // -w bin_width FFT bin width (frequency resolution) in Hz
-	NumSamples int64 `yaml:"numSamples"` // -n num_samples Number of samples per frequency, 8192-4294967296
+	LNAGain    *int  `yaml:"lnaGain" json:"lnaGain"`       // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
+	VGAGain    *int  `yaml:"vgaGain" json:"vgaGain"`       // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
+	BinWidth   int64 `yaml:"binWidth" json:"binWidth"`     // -w bin_width FFT bin width (frequency resolution) in Hz
+	NumSamples int64 `yaml:"numSamples" json:"numSamples"` // -n num_samples Number of samples per frequency, 8192-4294967296
 
 	// Optional - Advanced Configuration
 
 	// Configured externally
 	// SerialNumber string // -d serial_number Serial number of desired HackRF
 
-	EnableAmp    bool `yaml:"enableAmp"`    // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
-	AntennaPower bool `yaml:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
+	EnableAmp    bool `yaml:"enableAmp" json:"enableAmp"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
+	AntennaPower bool `yaml:"antennaPower" json:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
 
 	// Always run scan continuously
 	// OneShot      bool   // -1 One shot mode
 
-	NumSweeps int `yaml:"numSweeps"` // -N num_sweeps Number of sweeps to perform
+	NumSweeps int `yaml:"numSweeps" json:"numSweeps"` // -N num_sweeps Number of sweeps to perform
 
 	// For the sake of consistency with `rtl_power`,
 	// BinaryOutput bool // -B Binary output

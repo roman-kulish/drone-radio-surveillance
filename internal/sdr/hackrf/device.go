@@ -92,7 +92,7 @@ func (h handler) Parse(line string, deviceID string, sr chan<- sdr.SweepResult) 
 			reading.IsValid = true
 		}
 
-		result.Samples = append(result.Samples, reading)
+		result.Readings = append(result.Readings, reading)
 	}
 
 	sr <- result
