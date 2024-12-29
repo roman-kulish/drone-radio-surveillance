@@ -1,6 +1,6 @@
 //go:build linux
 
-package driver
+package sdr
 
 import (
 	"errors"

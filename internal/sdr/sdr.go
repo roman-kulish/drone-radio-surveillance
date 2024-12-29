@@ -58,10 +58,3 @@ func (s *Sample) FrequencyCenter() int64 {
 // 	Sample
 // 	Telemetry
 // }
-
-// type Device interface {
-// 	Start() (<-chan Sample, error) // Returns read-only channel and error
-// 	Stop() error                   // Graceful shutdown
-// 	Status() DeviceStatus          // Current device state
-// 	ID() string                    // Unique device identifier
-// }
