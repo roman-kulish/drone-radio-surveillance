@@ -28,7 +28,7 @@ var (
 // Handler interface defines the methods required for handling a device
 type Handler interface {
 	Cmd(ctx context.Context) *exec.Cmd
-	Parse(line string, samples chan<- Sample) error
+	Parse(line string, deviceID string, samples chan<- Sample) error
 	Device() string
 }
 
@@ -120,7 +120,7 @@ func (d *Device) BeginSampling(ctx context.Context, samples chan<- Sample) (<-ch
 
 		done := make(chan error, 3) // expects three results from three goroutines
 
-		go d.handleStdout(stdout, samples, done)
+		go d.handleStdout(stdout, d.deviceID, samples, done)
 		go d.handleStderr(stderr, done)
 		go d.handleCmdWait(cmd, done)
 
@@ -155,13 +155,13 @@ func (d *Device) IsSampling() bool {
 }
 
 // handleStdout reads from stdout, parses and sends samples to the samples channel.
-func (d *Device) handleStdout(stdout io.Reader, samples chan<- Sample, done chan<- error) {
+func (d *Device) handleStdout(stdout io.Reader, deviceID string, samples chan<- Sample, done chan<- error) {
 	var parseErrors uint8
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
-		if err := d.handler.Parse(line, samples); err != nil {
+		if err := d.handler.Parse(line, deviceID, samples); err != nil {
 			parseErrors++
 			d.logger.Error(fmt.Sprintf("error parsing samples: %s", err.Error()), slog.String("line", line))
 

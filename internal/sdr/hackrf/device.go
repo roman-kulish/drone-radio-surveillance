@@ -36,7 +36,7 @@ func (h handler) Cmd(ctx context.Context) *exec.Cmd {
 	return exec.CommandContext(ctx, h.binPath, h.args...)
 }
 
-func (h handler) Parse(line string, samples chan<- sdr.Sample) error {
+func (h handler) Parse(line string, deviceID string, samples chan<- sdr.Sample) error {
 	// TODO implement me
 	fmt.Println(line)
 	return nil

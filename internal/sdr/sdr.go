@@ -4,26 +4,13 @@ import "time"
 
 // Sample represents a single sample from the SDR
 type Sample struct {
-	// Timestamp information
-	Timestamp time.Time
-
-	// Frequency information
-	FrequencyLow  int64 // Hz low from output
-	FrequencyHigh int64 // Hz high from output
-	BinWidth      int64 // Hz step/bin width
-
-	// Measurement data
-	Power      float64 // Power level (dBm for rtl_sdr, dB for hackrf)
-	NumSamples int     // Number of samples used for this measurement
-
-	// Device metadata
-	Device   string // "rtl-sdr" or "hackrf"
-	DeviceID string // Serial number or index
-}
-
-// FrequencyCenter is a helper method to get center frequency
-func (s *Sample) FrequencyCenter() int64 {
-	return s.FrequencyLow + (s.BinWidth / 2)
+	Timestamp  time.Time // Timestamp information
+	Frequency  float64   // Center frequency in Hz
+	Power      float64   // Power level (dBm for rtl_sdr, dB for hackrf)
+	BinWidth   float64   // Hz step/bin width
+	NumSamples int       // Number of samples used for this measurement
+	Device     string    // Device type (e.g., "rtl-sdr", "hackrf")
+	DeviceID   string    // Serial number or index (human-readable)
 }
 
 // // Telemetry is the telemetry data from the drone sensors
