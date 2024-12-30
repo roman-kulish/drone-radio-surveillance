@@ -42,30 +42,10 @@ type Config struct {
 	NumSamples int64 `yaml:"numSamples" json:"numSamples"` // -n num_samples Number of samples per frequency, 8192-4294967296
 
 	// Optional - Advanced Configuration
-
-	// Configured externally
-	// SerialNumber string // -d serial_number Serial number of desired HackRF
-
-	EnableAmp    bool `yaml:"enableAmp" json:"enableAmp"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
-	AntennaPower bool `yaml:"antennaPower" json:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
-
-	// Always run scan continuously
-	// OneShot      bool   // -1 One shot mode
-
-	NumSweeps int `yaml:"numSweeps" json:"numSweeps"` // -N num_sweeps Number of sweeps to perform
-
-	// For the sake of consistency with `rtl_power`,
-	// BinaryOutput bool // -B Binary output
-	// InverseFFT   bool // -I Binary inverse FFT output
-
-	// Always dump to stdout
-	// OutputFile   string // -r filename Output file
-
-	// FFTW wisdom file support (-W and -P options) is not implemented
-	// Normalized timestamp option (-n) is not supported to keep behaviour consistent with `rtl_power`
-
-	// Example invocation:
-	// hackrf_sweep -f 824:849 -w 100k -l 16 -g 20
+	SerialNumber string `yaml:"serialNumber" json:"serialNumber"` // -d serial_number Serial number of desired HackRF
+	EnableAmp    bool   `yaml:"enableAmp" json:"enableAmp"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
+	AntennaPower bool   `yaml:"antennaPower" json:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
+	NumSweeps    int    `yaml:"numSweeps" json:"numSweeps"`       // -N num_sweeps Number of sweeps to perform
 }
 
 func (c *Config) Validate() error {
@@ -110,7 +90,7 @@ func (c *Config) Validate() error {
 // Args builds the command line arguments for `hackrf_sweep`
 // See `man hackrf_sweep` for more information:
 // https://manpages.debian.org/bookworm/hackrf/hackrf_sweep.1.en.html
-func (c *Config) Args(serialNumber string) ([]string, error) {
+func (c *Config) Args() ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -121,8 +101,8 @@ func (c *Config) Args(serialNumber string) ([]string, error) {
 			c.FrequencyEnd/1e6),
 	}
 
-	if serialNumber != "" {
-		args = append(args, "-d", serialNumber)
+	if c.SerialNumber != "" {
+		args = append(args, "-d", c.SerialNumber)
 	}
 
 	if c.BinWidth > 0 {
@@ -149,28 +129,9 @@ func (c *Config) Args(serialNumber string) ([]string, error) {
 		args = append(args, "-p", "1")
 	}
 
-	// Always run scan continuously
-	// if c.OneShot {
-	// 	args = append(args, "-1")
-	// }
-
 	if c.NumSweeps > 0 {
 		args = append(args, "-N", strconv.Itoa(c.NumSweeps))
 	}
-
-	// For the sake of consistency with `rtl_power`,
-	// if c.BinaryOutput {
-	// 	args = append(args, "-B")
-	// }
-	//
-	// if c.InverseFFT {
-	// 	args = append(args, "-I")
-	// }
-
-	// Always dump to stdout
-	// if c.OutputFile != "" {
-	// 	args = append(args, "-r", c.OutputFile)
-	// }
 
 	return args, nil
 }

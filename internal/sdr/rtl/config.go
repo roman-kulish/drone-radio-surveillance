@@ -1,6 +1,7 @@
 package rtl
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -77,6 +78,25 @@ func (d *TimeDuration) MarshalYAML() (interface{}, error) {
 	return d.String(), nil
 }
 
+func (d *TimeDuration) UnmarshalJSON(bytes []byte) error {
+	var v string
+	if err := json.Unmarshal(bytes, &v); err != nil {
+		return err
+	}
+
+	duration, err := time.ParseDuration(v)
+	if err != nil {
+		return fmt.Errorf("rtl.TimeDuration: failed to parse: %s", err)
+	}
+
+	*d = TimeDuration(duration)
+	return nil
+}
+
+func (d *TimeDuration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(*d).String())
+}
+
 func (d *TimeDuration) Validate() error {
 	duration := time.Duration(*d)
 
@@ -150,19 +170,12 @@ type Config struct {
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
 
-	// Configured externally
-	// DeviceIndex int `yaml:"deviceIndex"` // -d device_index (default: 0)
+	DeviceIndex int `yaml:"deviceIndex" json:"deviceIndex"` // -d device_index (default: 0)
 
 	Gain     int `yaml:"gain" json:"gain"`         // -g tuner_gain (default: automatic)
 	PPMError int `yaml:"ppmError" json:"ppmError"` // -p ppm_error (default: 0)
 
-	// Always dump to stdout
-	// OutputFile  string // filename (a '-' dumps samples to stdout)
-
 	// Time Control
-	// Always do continuous scans
-	// SingleShot bool `yaml:"singleShot"` // -1 enables single-shot mode (default: off)
-
 	ExitTimer TimeDuration `yaml:"exitTimer" json:"exitTimer"` // -e exit_timer (default: off/0)
 	// Time units: 's' seconds, 'm' minutes, 'h' hours
 	// Default unit is seconds
@@ -182,9 +195,6 @@ type Config struct {
 	DirectSampling bool `yaml:"directSampling" json:"directSampling"` // -D enable direct sampling (default: off)
 	OffsetTuning   bool `yaml:"offsetTuning" json:"offsetTuning"`     // -O enable offset tuning (default: off)
 	BiasTee        bool `yaml:"biasTee" json:"biasTee"`               // -T enable bias-tee (default: off)
-
-	// Example invocation:
-	// rtl_power -f 824M:849M:12.5k -i 10s -g 50
 }
 
 func (c *Config) Validate() error {
@@ -246,7 +256,7 @@ func (c *Config) Validate() error {
 // Args returns the command line arguments for `rtl_power`
 // See `man rtl_power` for more information:
 // https://manpages.debian.org/bookworm/rtl-sdr/rtl_power.1.en.html
-func (c *Config) Args(deviceIndex int) ([]string, error) {
+func (c *Config) Args() ([]string, error) {
 	if err := c.Validate(); err != nil {
 		return nil, err
 	}
@@ -263,7 +273,7 @@ func (c *Config) Args(deviceIndex int) ([]string, error) {
 		args = append(args, "-i", c.Interval.String())
 	}
 
-	args = append(args, "-d", strconv.Itoa(deviceIndex)) // 0 is the default device index
+	args = append(args, "-d", strconv.Itoa(c.DeviceIndex)) // 0 is the default device index
 
 	if c.Gain > 0 {
 		args = append(args, "-g", strconv.Itoa(c.Gain))
@@ -272,11 +282,6 @@ func (c *Config) Args(deviceIndex int) ([]string, error) {
 	if c.PPMError != 0 {
 		args = append(args, "-p", strconv.Itoa(c.PPMError))
 	}
-
-	// Time control
-	// if c.SingleShot {
-	//	args = append(args, "-1")
-	// }
 
 	if c.ExitTimer > 0 {
 		args = append(args, "-e", c.ExitTimer.String())
@@ -321,10 +326,6 @@ func (c *Config) Args(deviceIndex int) ([]string, error) {
 		args = append(args, "-T")
 	}
 
-	// Add output file if specified
-	// if c.OutputFile != "" {
-	// 	args = append(args, c.OutputFile)
-	// }
 	args = append(args, "-") // Always dump to stdout
 
 	return args, nil

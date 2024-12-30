@@ -23,13 +23,13 @@ type handler struct {
 }
 
 // New creates a new RTL-SDR handler
-func New(deviceIndex int, config *Config) (sdr.Handler, error) {
+func New(config *Config) (sdr.Handler, error) {
 	binPath, err := sdr.FindRuntime(Runtime)
 	if err != nil {
 		return nil, fmt.Errorf("error finding runtime: %w", err)
 	}
 
-	args, err := config.Args(deviceIndex)
+	args, err := config.Args()
 	if err != nil {
 		return nil, fmt.Errorf("error creating args: %w", err)
 	}

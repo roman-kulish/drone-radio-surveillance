@@ -23,13 +23,13 @@ type handler struct {
 }
 
 // New creates a new HackRF handler
-func New(serialNumber string, config *Config) (sdr.Handler, error) {
+func New(config *Config) (sdr.Handler, error) {
 	binPath, err := sdr.FindRuntime(Runtime)
 	if err != nil {
 		return nil, fmt.Errorf("error finding runtime: %w", err)
 	}
 
-	args, err := config.Args(serialNumber)
+	args, err := config.Args()
 	if err != nil {
 		return nil, fmt.Errorf("error creating args: %w", err)
 	}
