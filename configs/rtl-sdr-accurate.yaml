@@ -1,11 +1,7 @@
 # Accurate Preset
 # Total sweep time: ~5-6 seconds
 # Best for: Low-speed flights, detailed analysis
----
-devices:
-  type: rtl-sdr
-  indexes: [0]
-sweep:
+rtlConfig: &rtlConfig
   frequencyStart: 24000000     # 24 MHz
   frequencyEnd: 1766000000     # 1766 MHz
   binSize: 25000               # 25 kHz steps - fine resolution
@@ -17,7 +13,62 @@ sweep:
   fftThreads: 2               # Parallel processing
   peakHold: true              # Track peaks
   firSize: 9                  # Enable filter for better accuracy
----
 # Spatial resolution at different drone speeds:
 # - At 5 m/s: point every 30 meters
 # - At 10 m/s: point every 60 meters
+
+# Accurate Preset
+# Total sweep time: ~5-6 seconds
+# Best for: Low-speed flights, detailed analysis
+hackRFConfig: &hackRFConfig
+  frequencyStart: 24000000     # 24 MHz
+  frequencyEnd: 1766000000     # 1766 MHz
+  binSize: 50000               # 50 kHz steps for higher resolution
+  sampleRate: 10000000         # 10 MSPS - reduced for better accuracy
+  bandwidth: 10000000          # 10 MHz instantaneous bandwidth
+  lnaGain: 16                  # Moderate LNA gain for better dynamic range
+  vgaGain: 26                  # Moderate VGA gain
+  enableAmp: false             # Disable amp for better dynamic range
+  fftSize: 1024                # Larger FFT size for frequency resolution
+  minFrequencySpacing: 10000000 # Match bandwidth
+  dwellTime: 512               # Longer dwell time for better accuracy
+  hopTime: 30000              # 30ms hop time for better settling
+# Spatial resolution at different drone speeds:
+# - At 5 m/s: point every 25-30 meters
+# - At 10 m/s: point every 50-60 meters
+
+# Global application settings
+settings:
+  logLevel: "info"                   # debug, info, warn, error
+
+# Device configurations
+devices:
+  # RTL-SDR device example
+  - name: "Main Scanner"             # Human readable identifier
+    type: "rtl-sdr"                  # Device type (rtl-sdr or hackrf)
+    enabled: true                    # Whether this device should be used
+    config: *rtlConfig               # Device configuration
+
+  # HackRF device example
+  - name: "Wide Scanner"             # Human readable identifier
+    type: "hackrf"                   # Device type
+    enabled: false                   # Whether this device should be used
+    config: *hackRFConfig            # Device configuration
+
+# Telemetry configuration
+telemetry:
+  serialPort: "/dev/ttyUSB0"         # Serial port for telemetry data
+  baudRate: 115200                   # Serial port baud rate
+  updateInterval: 0.1                # Telemetry update interval in seconds
+  enabled: false                     # Enable telemetry collection
+  types:
+    - gps
+    - imu
+    - radio
+    - barometer
+    - magnetometer
+
+# Storage configuration
+storage:
+  dataDirectory: "data"              # Directory for storing session databases
+  maxBatchSize: 100                  # Maximum samples per batch insert
