@@ -11,12 +11,19 @@ import (
 )
 
 const (
-	TelemetryTypeGPS          TelemetryType = "gps"
-	TelemetryTypeIMU          TelemetryType = "imu"
-	TelemetryTypeRadio        TelemetryType = "radio"
-	TelemetryTypeBarometer    TelemetryType = "barometer"
-	TelemetryTypeMagnetometer TelemetryType = "magnetometer"
+	TelemetryGPS          TelemetryType = "gps"
+	TelemetryIMU          TelemetryType = "imu"
+	TelemetryRadio        TelemetryType = "radio"
+	TelemetryBarometer    TelemetryType = "barometer"
+	TelemetryMagnetometer TelemetryType = "magnetometer"
+
+	DeviceRTLSDR DeviceType = "rtl-sdr"
+	DeviceHackRF DeviceType = "hackrf"
 )
+
+type TelemetryType string
+
+type DeviceType string
 
 // yamlNode is a custom type for unmarshalling raw YAML nodes
 type yamlNode struct {
@@ -28,8 +35,6 @@ func (y *yamlNode) UnmarshalYAML(value *yaml.Node) error {
 	y.Node = value
 	return nil
 }
-
-type TelemetryType string
 
 // Config represents the main application configuration
 type Config struct {
@@ -58,19 +63,19 @@ func (s *Settings) UnmarshalYAML(value *yaml.Node) error {
 
 // DeviceConfig represents a single device configuration
 type DeviceConfig struct {
-	Name    string `yaml:"name"`
-	Type    string `yaml:"type"`
-	Enabled bool   `yaml:"enabled"`
-	Config  any    `yaml:"config"`
+	Name    string     `yaml:"name"`
+	Type    DeviceType `yaml:"type"`
+	Enabled bool       `yaml:"enabled"`
+	Config  any        `yaml:"config"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for custom deserialization of DeviceConfig from YAML input.
 func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 	var t struct {
-		Name    string   `yaml:"name"`
-		Type    string   `yaml:"type"`
-		Enabled bool     `yaml:"enabled"`
-		Config  yamlNode `yaml:"config"`
+		Name    string     `yaml:"name"`
+		Type    DeviceType `yaml:"type"`
+		Enabled bool       `yaml:"enabled"`
+		Config  yamlNode   `yaml:"config"`
 	}
 	if err := value.Decode(&t); err != nil {
 		return err
@@ -82,7 +87,7 @@ func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 		Enabled: t.Enabled,
 	}
 	switch t.Type {
-	case "rtl-sdr":
+	case DeviceRTLSDR:
 		var c rtl.Config
 		if err := t.Config.Decode(&c); err != nil {
 			return err
@@ -90,7 +95,7 @@ func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 
 		dc.Config = &c
 
-	case "hackrf":
+	case DeviceHackRF:
 		var c hackrf.Config
 		if err := t.Config.Decode(&c); err != nil {
 			return err

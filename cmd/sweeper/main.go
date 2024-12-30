@@ -39,7 +39,7 @@ func main() {
 			continue
 		}
 		switch deviceConfig.Type {
-		case "rtl-sdr":
+		case app.DeviceRTLSDR:
 			runner, err := rtl.New(deviceConfig.Config.(*rtl.Config))
 			if err != nil {
 				logger.Error(fmt.Sprintf("failed to create RTL-SDR device: %s", err.Error()))
@@ -47,7 +47,7 @@ func main() {
 			}
 			devices = append(devices, sdr.NewDevice(deviceConfig.Name, runner, sdr.WithLogger(logger)))
 
-		case "hackrf":
+		case app.DeviceHackRF:
 			runner, err := hackrf.New(deviceConfig.Config.(*hackrf.Config))
 			if err != nil {
 				logger.Error(fmt.Sprintf("failed to create HackRF device: %s", err.Error()))
@@ -61,5 +61,7 @@ func main() {
 		}
 	}
 
+	// TODO: storage
+	// TODO: telemetry
 	// TODO: collector
 }
