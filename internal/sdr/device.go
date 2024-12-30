@@ -82,6 +82,16 @@ func NewDevice(deviceID string, h Handler, options ...func(d *Device)) *Device {
 	return &d
 }
 
+// Device returns the device type
+func (d *Device) Device() string {
+	return d.handler.Device()
+}
+
+// DeviceID returns the device ID
+func (d *Device) DeviceID() string {
+	return d.deviceID
+}
+
 // BeginSampling starts the device and collects samples, sending them to the samples channel
 func (d *Device) BeginSampling(ctx context.Context, sr chan<- SweepResult) (<-chan error, error) {
 	if d.isSampling.Load() {
