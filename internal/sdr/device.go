@@ -114,8 +114,6 @@ func (d *Device) BeginSampling(ctx context.Context, sr chan<- SweepResult) (<-ch
 
 	d.wg.Add(1)
 	go func() {
-		defer close(samplingStopped)
-
 		d.logger.Info("starting samples collection...")
 
 		done := make(chan error, 3) // expects three results from three goroutines
@@ -144,6 +142,8 @@ func (d *Device) BeginSampling(ctx context.Context, sr chan<- SweepResult) (<-ch
 		if len(errs) > 0 {
 			samplingStopped <- errors.Join(errs...)
 		}
+
+		close(samplingStopped)
 	}()
 
 	return samplingStopped, nil
