@@ -23,8 +23,8 @@ type Store struct {
 	sessions map[string]int64
 }
 
-// NewStore creates a new database connection and initializes the schema
-func NewStore(dbPath string) (*Store, error) {
+// New creates a new database connection and initializes the schema
+func New(dbPath string) (*Store, error) {
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)

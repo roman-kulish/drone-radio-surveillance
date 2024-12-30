@@ -1,15 +1,15 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"gtihub.con/roman-kulish/radio-surveillance/cmd/sweeper/app"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
 )
 
 func main() {
@@ -33,35 +33,13 @@ func main() {
 
 	logLevel.Set(config.Settings.LogLevel)
 
-	var devices []*sdr.Device
-	for _, deviceConfig := range config.Devices {
-		if !deviceConfig.Enabled {
-			continue
-		}
-		switch deviceConfig.Type {
-		case app.DeviceRTLSDR:
-			runner, err := rtl.New(deviceConfig.Config.(*rtl.Config))
-			if err != nil {
-				logger.Error(fmt.Sprintf("failed to create RTL-SDR device: %s", err.Error()))
-				os.Exit(1)
-			}
-			devices = append(devices, sdr.NewDevice(deviceConfig.Name, runner, sdr.WithLogger(logger)))
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
 
-		case app.DeviceHackRF:
-			runner, err := hackrf.New(deviceConfig.Config.(*hackrf.Config))
-			if err != nil {
-				logger.Error(fmt.Sprintf("failed to create HackRF device: %s", err.Error()))
-				os.Exit(1)
-			}
-			devices = append(devices, sdr.NewDevice(deviceConfig.Name, runner, sdr.WithLogger(logger)))
+	if err = app.Run(ctx, config, logger); err != nil {
+		logger.Error(err.Error())
 
-		default:
-			logger.Error(fmt.Sprintf("failed to create device: unknown type '%s'", deviceConfig.Type))
-			os.Exit(1)
-		}
+		cancel()
+		os.Exit(1)
 	}
-
-	// TODO: storage
-	// TODO: telemetry
-	// TODO: collector
 }
