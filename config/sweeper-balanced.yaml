@@ -4,14 +4,14 @@
 rtlConfig: &rtlConfig
   frequencyStart: 24000000     # 24 MHz
   frequencyEnd: 1766000000     # 1766 MHz
-  binSize: 50000               # 50 kHz steps - better resolution
-  interval: 0.2s               # 200ms integration
-  cropPercent: 20              # Standard cropping
+  binWidth: 50000              # 50 kHz steps - better resolution
+  interval: 1s                 # 1s integration
+  crop: 0.2                    # Standard cropping
   gain: 35                     # Balanced gain
   smoothing: avg               # Average smoothing for better accuracy
   windowFunction: hamming      # Better spectral accuracy
-  fftThreads: 2               # Parallel processing
-  peakHold: true              # Keep track of peaks during interval
+  fftThreads: 2                # Parallel processing
+  peakHold: true               # Keep track of peaks during interval
 # Spatial resolution at different drone speeds:
 # - At 5 m/s: point every 20 meters
 # - At 10 m/s: point every 40 meters
@@ -20,18 +20,12 @@ rtlConfig: &rtlConfig
 # Total sweep time: ~3-4 seconds
 # Best for: Medium-speed flights, general scanning
 hackRFConfig: &hackRFConfig
-  frequencyStart: 24000000     # 24 MHz
-  frequencyEnd: 1766000000     # 1766 MHz
-  binSize: 100000              # 100 kHz steps - balanced resolution
-  sampleRate: 15000000         # 15 MSPS - balanced rate
-  bandwidth: 15000000          # 15 MHz instantaneous bandwidth
+  frequencyStart: 1000000      # 1 MHz
+  frequencyEnd: 6000000000     # 6 Ghz
+  binWidth: 100000             # 100 kHz steps - balanced resolution
   lnaGain: 20                  # Balanced LNA gain
   vgaGain: 32                  # Balanced VGA gain
   enableAmp: true              # Enable amp but with moderate gains
-  fftSize: 512                 # Medium FFT size
-  minFrequencySpacing: 15000000 # Match bandwidth
-  dwellTime: 256               # Medium dwell time
-  hopTime: 20000              # 20ms hop time
 # Spatial resolution at different drone speeds:
 # - At 5 m/s: point every 15-20 meters
 # - At 10 m/s: point every 30-40 meters
@@ -51,7 +45,7 @@ devices:
   # HackRF device example
   - name: "Wide Scanner"             # Human readable identifier
     type: "hackrf"                   # Device type
-    enabled: false                   # Whether this device should be used
+    enabled: true                    # Whether this device should be used
     config: *hackRFConfig            # Device configuration
 
 # Telemetry configuration
@@ -59,7 +53,7 @@ telemetry:
   serialPort: "/dev/ttyUSB0"         # Serial port for telemetry data
   baudRate: 115200                   # Serial port baud rate
   updateInterval: 0.1                # Telemetry update interval in seconds
-  enabled: false                     # Enable telemetry collection
+  enabled: true                      # Enable telemetry collection
   types:
     - gps
     - imu

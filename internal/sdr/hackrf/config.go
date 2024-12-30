@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -36,16 +37,14 @@ type Config struct {
 	FrequencyEnd   int64 `yaml:"frequencyEnd" json:"frequencyEnd"`     // -f freq_max Frequency range end in MHz
 
 	// Important but Optional (have reasonable defaults)
-	LNAGain    *int  `yaml:"lnaGain" json:"lnaGain"`       // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
-	VGAGain    *int  `yaml:"vgaGain" json:"vgaGain"`       // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
-	BinWidth   int64 `yaml:"binWidth" json:"binWidth"`     // -w bin_width FFT bin width (frequency resolution) in Hz
-	NumSamples int64 `yaml:"numSamples" json:"numSamples"` // -n num_samples Number of samples per frequency, 8192-4294967296
+	LNAGain  *int  `yaml:"lnaGain" json:"lnaGain"`   // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
+	VGAGain  *int  `yaml:"vgaGain" json:"vgaGain"`   // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
+	BinWidth int64 `yaml:"binWidth" json:"binWidth"` // -w bin_width FFT bin width (frequency resolution) in Hz
 
 	// Optional - Advanced Configuration
 	SerialNumber string `yaml:"serialNumber" json:"serialNumber"` // -d serial_number Serial number of desired HackRF
 	EnableAmp    bool   `yaml:"enableAmp" json:"enableAmp"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
 	AntennaPower bool   `yaml:"antennaPower" json:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
-	NumSweeps    int    `yaml:"numSweeps" json:"numSweeps"`       // -N num_sweeps Number of sweeps to perform
 }
 
 func (c *Config) Validate() error {
@@ -72,16 +71,6 @@ func (c *Config) Validate() error {
 		if *c.VGAGain%VGAGainStep != 0 {
 			return errors.New("hackrf.Config: VGA gain must be a multiple of 2 dB")
 		}
-	}
-
-	// NumSamples validation (if specified)
-	if c.NumSamples > 0 && c.NumSamples < MinNumSamples {
-		return fmt.Errorf("hackrf.Config: number of samples must be at least 8192: %d given", c.NumSamples)
-	}
-
-	// NumSweeps validation (if specified)
-	if c.NumSweeps < 0 {
-		return fmt.Errorf("hackrf.Config: number of sweeps cannot be negative: %d given", c.NumSweeps)
 	}
 
 	return nil
@@ -117,10 +106,6 @@ func (c *Config) Args() ([]string, error) {
 		args = append(args, "-g", strconv.Itoa(*c.VGAGain))
 	}
 
-	if c.NumSamples >= 8192 {
-		args = append(args, "-n", strconv.FormatInt(c.NumSamples, 10))
-	}
-
 	if c.EnableAmp {
 		args = append(args, "-a", "1")
 	}
@@ -129,9 +114,13 @@ func (c *Config) Args() ([]string, error) {
 		args = append(args, "-p", "1")
 	}
 
-	if c.NumSweeps > 0 {
-		args = append(args, "-N", strconv.Itoa(c.NumSweeps))
-	}
-
 	return args, nil
+}
+
+func (c *Config) String() string {
+	args, err := c.Args()
+	if err != nil {
+		return fmt.Sprintf("hackrf.Config: failed to build args: %s", err)
+	}
+	return fmt.Sprintf("%s %s", Runtime, strings.Join(args, " "))
 }

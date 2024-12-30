@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -187,7 +188,7 @@ type Config struct {
 
 	// Advanced/Experimental Options
 	WindowFunction WindowFunction `yaml:"windowFunction" json:"windowFunction"` // -w window (default: rectangle)
-	CropPercent    float32        `yaml:"cropPercent" json:"cropPercent"`       // -c crop_percent (default: 0%, recommended: 20%-50%)
+	Crop           float32        `yaml:"crop" json:"crop"`                     // -c crop_percent (default: 0%, recommended: 20%-50%)
 	FIRSize        *int           `yaml:"firSize" json:"firSize"`               // -F fir_size (default: disabled, can be 0 or 9)
 
 	// Hardware Options
@@ -209,9 +210,9 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("rtl.Config: frequency end must be greater than start: %d <= %d", c.FrequencyEnd, c.FrequencyStart)
 	}
 
-	// Validate bin size
+	// Validate bin width
 	if c.BinWidth < BinWidthMin || c.BinWidth > BinWidthMax {
-		return fmt.Errorf("rtl.Config: invalid bin size: %d, must be between %d and %d Hz", c.BinWidth, BinWidthMin, BinWidthMax)
+		return fmt.Errorf("rtl.Config: invalid bin width: %d, must be between %d and %d Hz", c.BinWidth, BinWidthMin, BinWidthMax)
 	}
 
 	// Validate time specifications
@@ -241,8 +242,8 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate crop percent
-	if c.CropPercent < 0 || c.CropPercent > 1 {
-		return fmt.Errorf("rtl.Config: crop percent must be between 0 and 1: %0.2f given", c.CropPercent)
+	if c.Crop < 0 || c.Crop > 1 {
+		return fmt.Errorf("rtl.Config: crop percent must be between 0 and 1: %0.2f given", c.Crop)
 	}
 
 	// Validate FIR size
@@ -301,8 +302,8 @@ func (c *Config) Args() ([]string, error) {
 		args = append(args, "-w", c.WindowFunction.String())
 	}
 
-	if c.CropPercent > 0 {
-		args = append(args, "-c", strconv.FormatFloat(float64(c.CropPercent), 'f', 2, 32))
+	if c.Crop > 0 {
+		args = append(args, "-c", strconv.FormatFloat(float64(c.Crop), 'f', 2, 32))
 	}
 
 	if c.FIRSize != nil {
@@ -329,4 +330,12 @@ func (c *Config) Args() ([]string, error) {
 	args = append(args, "-") // Always dump to stdout
 
 	return args, nil
+}
+
+func (c *Config) String() string {
+	args, err := c.Args()
+	if err != nil {
+		return fmt.Sprintf("rtl.Config: failed to build args: %s", err)
+	}
+	return fmt.Sprintf("%s %s", Runtime, strings.Join(args, " "))
 }

@@ -65,7 +65,7 @@ func (h handler) Parse(line string, deviceID string, sr chan<- sdr.SweepResult) 
 
 	// Parse low frequency, bin information and number of samples
 	// Note that the high frequency is not used, because the low frequency and
-	// bin size are used to calculate the center frequency of each bin.
+	// bin width are used to calculate the center frequency of each bin.
 	freqLow, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
 	if err != nil {
 		return fmt.Errorf("invalis start frequency: %w", err)
