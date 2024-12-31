@@ -21,7 +21,7 @@ type Store struct {
 
 // New creates a new database connection and initializes the schema
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -76,6 +76,41 @@ func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, e
 	}
 
 	return result.LastInsertId()
+}
+
+// Session returns a session by its ID
+func (s *Store) Session(id int64) (*SessionData, error) {
+	stmt, err := s.db.Prepare(`SELECT id, start_time, device_type, device_id, config FROM sessions WHERE id = ?`)
+	if err != nil {
+		return nil, fmt.Errorf("preparing statement: %w", err)
+	}
+	defer stmt.Close()
+
+	var session SessionData
+	if err = stmt.QueryRow(id).Scan(&session.ID, &session.StartTime, &session.DeviceType, &session.DeviceID, &session.Config); err != nil {
+		return nil, fmt.Errorf("querying session: %w", err)
+	}
+
+	return &session, nil
+}
+
+func (s *Store) Sessions() ([]SessionData, error) {
+	rows, err := s.db.Query(`SELECT id, start_time, device_type, device_id, config FROM sessions`)
+	if err != nil {
+		return nil, fmt.Errorf("querying sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var sessions []SessionData
+	for rows.Next() {
+		var session SessionData
+		if err = rows.Scan(&session.ID, &session.StartTime, &session.DeviceType, &session.DeviceID, &session.Config); err != nil {
+			return nil, fmt.Errorf("scanning session: %w", err)
+		}
+		sessions = append(sessions, session)
+	}
+
+	return sessions, nil
 }
 
 // InsertTelemetry inserts telemetry data and returns its ID

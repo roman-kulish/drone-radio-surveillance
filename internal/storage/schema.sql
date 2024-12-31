@@ -62,6 +62,16 @@ FROM samples s
 LEFT JOIN telemetry t ON s.telemetry_id = t.id;
 
 -- Essential indexes for joins and basic querying
-CREATE INDEX IF NOT EXISTS idx_samples_session_telemetry ON samples(session_id, telemetry_id);
-CREATE INDEX IF NOT EXISTS idx_samples_freq ON samples(frequency, timestamp);
-CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry(session_id);
+
+-- For telemetry join
+CREATE INDEX IF NOT EXISTS idx_samples_telemetry ON samples(telemetry_id)
+    WHERE telemetry_id IS NOT NULL;
+
+-- Telemetry table
+CREATE INDEX IF NOT EXISTS idx_telemetry_session_time ON telemetry(session_id);
+
+-- For session-wide frequency and time ranges + aggregates
+CREATE INDEX IF NOT EXISTS idx_samples_session_time_freq ON samples(session_id, timestamp, frequency);
+
+-- For aggregates
+CREATE INDEX IF NOT EXISTS idx_samples_session_freq_time ON samples(session_id, frequency, timestamp);
