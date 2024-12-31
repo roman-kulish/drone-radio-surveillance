@@ -1,4 +1,4 @@
-module gtihub.con/roman-kulish/radio-surveillance
+module github.con/roman-kulish/radio-surveillance
 
 go 1.23.0
 

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"os"
 
+	"github.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
+	"github.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
 	"gopkg.in/yaml.v3"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
 )
 
 const (
@@ -61,7 +61,7 @@ func (s *Settings) UnmarshalYAML(value *yaml.Node) error {
 	return s.LogLevel.UnmarshalText([]byte(t.LogLevel))
 }
 
-// DeviceConfig represents a single device configuration
+// DeviceConfig represents a single Device configuration
 type DeviceConfig struct {
 	Name    string     `yaml:"name"`
 	Type    DeviceType `yaml:"type"`
@@ -104,7 +104,7 @@ func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 		dc.Config = &c
 
 	default:
-		return fmt.Errorf("unknown device type: %s", t.Type)
+		return fmt.Errorf("unknown Device type: %s", t.Type)
 	}
 
 	*d = dc

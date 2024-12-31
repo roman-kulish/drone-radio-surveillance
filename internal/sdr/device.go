@@ -65,7 +65,7 @@ type Device struct {
 }
 
 // NewDevice creates a new Device instance with a discard logger
-func NewDevice(deviceID string, h Handler, options ...func(d *Device)) *Device {
+func NewDevice(deviceID string, h Handler, options ...func(*Device)) *Device {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // nil logger
 
 	d := Device{
@@ -82,14 +82,14 @@ func NewDevice(deviceID string, h Handler, options ...func(d *Device)) *Device {
 	return &d
 }
 
-// Device returns the device type
-func (d *Device) Device() string {
-	return d.handler.Device()
-}
-
 // DeviceID returns the device ID
 func (d *Device) DeviceID() string {
 	return d.deviceID
+}
+
+// Device returns the device name / type
+func (d *Device) Device() string {
+	return d.handler.Device()
 }
 
 // BeginSampling starts the device and collects samples, sending them to the samples channel

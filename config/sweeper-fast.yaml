@@ -44,7 +44,7 @@ devices:
   # HackRF device example
   - name: "Wide Scanner"             # Human readable identifier
     type: "hackrf"                   # Device type
-    enabled: true                    # Whether this device should be used
+    enabled: false                   # Whether this device should be used
     config: *hackRFConfig            # Device configuration
 
 # Telemetry configuration
@@ -52,7 +52,7 @@ telemetry:
   serialPort: "/dev/ttyUSB0"         # Serial port for telemetry data
   baudRate: 115200                   # Serial port baud rate
   updateInterval: 0.1                # Telemetry update interval in seconds
-  enabled: true                      # Enable telemetry collection
+  enabled: false                     # Enable telemetry collection
   types:
     - gps
     - imu

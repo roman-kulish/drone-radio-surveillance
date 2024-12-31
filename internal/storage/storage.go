@@ -5,7 +5,6 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -18,9 +17,6 @@ var schemaSQL string
 // Store handles database operations
 type Store struct {
 	db *sql.DB
-
-	mu       sync.RWMutex
-	sessions map[string]int64
 }
 
 // New creates a new database connection and initializes the schema
@@ -35,12 +31,7 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("initializing schema: %w", err)
 	}
 
-	s := Store{
-		db:       db,
-		sessions: make(map[string]int64),
-	}
-
-	return &s, nil
+	return &Store{db}, nil
 }
 
 // Close closes the database connection
@@ -48,34 +39,8 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// GetSessionIDByDevice retrieves session ID for a device
-func (s *Store) GetSessionIDByDevice(deviceID string) (int64, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	sessionID, ok := s.sessions[deviceID]
-	if !ok {
-		return 0, fmt.Errorf("getting session for device %s", deviceID)
-	}
-	return sessionID, nil
-}
-
 // CreateSession creates a new session and returns its ID
 func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, error) {
-	lastInsertID, err := s.createSession(deviceType, deviceID, config)
-	if err != nil {
-		return 0, err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.sessions[deviceID] = lastInsertID
-	return lastInsertID, nil
-}
-
-// CreateSession creates a new session and returns its ID
-func (s *Store) createSession(deviceType, deviceID string, config any) (int64, error) {
 	configJSON, err := json.Marshal(config)
 	if err != nil {
 		return 0, fmt.Errorf("marshaling config: %w", err)

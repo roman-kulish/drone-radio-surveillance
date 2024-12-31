@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr"
+	"github.con/roman-kulish/radio-surveillance/internal/sdr"
 )
 
 const (
@@ -99,6 +99,7 @@ func (h handler) Parse(line string, deviceID string, sr chan<- sdr.SweepResult) 
 	return nil
 }
 
+// Device returns the device type
 func (h handler) Device() string {
 	return Device
 }

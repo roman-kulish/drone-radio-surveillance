@@ -8,10 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
-	"gtihub.con/roman-kulish/radio-surveillance/internal/storage"
+	"github.con/roman-kulish/radio-surveillance/internal/storage"
 )
 
 const (
@@ -25,52 +22,21 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 	}
 	defer store.Close()
 
-	devices, err := createDevices(config.Devices, store, logger)
-	if err != nil {
-		return fmt.Errorf("failed to create devices: %w", err)
-	}
-	if len(devices) == 0 {
-		return fmt.Errorf("no devices specified on configuration")
+	var options []func(*Orchestrator)
+	if config.Storage.MaxBatchSize > 0 {
+		options = append(options, WithMaxBatchSize(config.Storage.MaxBatchSize))
 	}
 
 	// TODO: telemetry
-	// TODO: collector
 
-	return nil
-}
-
-func createDevices(config []DeviceConfig, store *storage.Store, logger *slog.Logger) ([]*sdr.Device, error) {
-	var devices []*sdr.Device
-	for _, deviceConfig := range config {
-		if !deviceConfig.Enabled {
-			continue
+	orchestrator := NewOrchestrator(store, logger, options...)
+	for _, c := range config.Devices {
+		if err = orchestrator.CreateDevice(&c); err != nil {
+			return fmt.Errorf("failed to create device: %w", err)
 		}
-
-		var handler sdr.Handler
-		var err error
-		switch deviceConfig.Type {
-		case DeviceRTLSDR:
-			if handler, err = rtl.New(deviceConfig.Config.(*rtl.Config)); err != nil {
-				return nil, fmt.Errorf("creating RTL-SDR device: %w", err)
-			}
-
-		case DeviceHackRF:
-			if handler, err = hackrf.New(deviceConfig.Config.(*hackrf.Config)); err != nil {
-				return nil, fmt.Errorf("creating HackRF device: %w", err)
-			}
-
-		default:
-			return nil, fmt.Errorf("creating device: unknown type '%s'", deviceConfig.Type)
-		}
-
-		if _, err = store.CreateSession(string(deviceConfig.Type), deviceConfig.Name, deviceConfig.Config); err != nil {
-			return nil, fmt.Errorf("creating session: %w", err)
-		}
-
-		devices = append(devices, sdr.NewDevice(deviceConfig.Name, handler, sdr.WithLogger(logger)))
 	}
 
-	return devices, nil
+	return orchestrator.Run(ctx)
 }
 
 func createStorage(config *StorageConfig) (*storage.Store, error) {
