@@ -41,9 +41,27 @@ func (s *Store) Close() error {
 
 // CreateSession creates a new session and returns its ID
 func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, error) {
-	configJSON, err := json.Marshal(config)
-	if err != nil {
-		return 0, fmt.Errorf("marshaling config: %w", err)
+	var configData sql.NullString
+
+	if config != nil {
+		switch config.(type) {
+		case string:
+			configData.Valid = true
+			configData.String = config.(string)
+
+		case []byte:
+			configData.Valid = true
+			configData.String = string(config.([]byte))
+
+		default:
+			v, err := json.Marshal(config)
+			if err != nil {
+				return 0, fmt.Errorf("marshaling config: %w", err)
+			}
+
+			configData.Valid = true
+			configData.String = string(v)
+		}
 	}
 
 	stmt, err := s.db.Prepare(`INSERT INTO sessions (start_time, device_type, device_id, config_json) VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`)
@@ -52,7 +70,7 @@ func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, e
 	}
 	defer stmt.Close()
 
-	result, err := stmt.Exec(deviceType, deviceID, string(configJSON))
+	result, err := stmt.Exec(deviceType, deviceID, configData)
 	if err != nil {
 		return 0, fmt.Errorf("inserting session: %w", err)
 	}
