@@ -43,3 +43,9 @@ type TelemetryData struct {
 	GroundCourse sql.NullInt16
 	RadioRSSI    sql.NullInt16
 }
+
+// SampleWithTelemetryData represents a single frequency measurement with telemetry data
+type SampleWithTelemetryData struct {
+	SampleData
+	Telemetry *TelemetryData
+}

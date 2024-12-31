@@ -1,5 +1,5 @@
 -- Session metadata (one record per device in a multi-device capture)
-CREATE TABLE sessions (
+CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
     start_time DATETIME NOT NULL,
     device_type TEXT NOT NULL,    -- 'rtl-sdr' or 'hackrf'
@@ -9,7 +9,7 @@ CREATE TABLE sessions (
 );
 
 -- Telemetry data
-CREATE TABLE telemetry (
+CREATE TABLE IF NOT EXISTS telemetry (
     id INTEGER PRIMARY KEY,
     session_id INTEGER NOT NULL, -- Link to capturing session
     timestamp DATETIME NOT NULL, -- Time of telemetry measurement
@@ -29,7 +29,7 @@ CREATE TABLE telemetry (
 );
 
 -- Core samples table
-CREATE TABLE samples (
+CREATE TABLE IF NOT EXISTS samples (
     id INTEGER PRIMARY KEY,
     session_id INTEGER NOT NULL,  -- Link back to capturing session
     timestamp DATETIME NOT NULL,  -- Time of the measurement
@@ -42,7 +42,26 @@ CREATE TABLE samples (
     FOREIGN KEY(telemetry_id) REFERENCES telemetry(id) ON DELETE SET NULL
 );
 
+CREATE VIEW IF NOT EXISTS v_samples_with_telemetry AS
+SELECT
+    s.*,
+    t.timestamp AS telemetry_timestamp,
+    t.latitude,
+    t.longitude,
+    t.altitude,
+    t.roll,
+    t.pitch,
+    t.yaw,
+    t.accel_x,
+    t.accel_y,
+    t.accel_z,
+    t.ground_speed,
+    t.ground_course,
+    t.radio_rssi
+FROM samples s
+LEFT JOIN telemetry t ON s.telemetry_id = t.id;
+
 -- Essential indexes for joins and basic querying
-CREATE INDEX idx_samples_session ON samples(session_id);
-CREATE INDEX idx_samples_freq ON samples(frequency, timestamp);
-CREATE INDEX idx_telemetry_session ON telemetry(session_id);
+CREATE INDEX IF NOT EXISTS idx_samples_session_telemetry ON samples(session_id, telemetry_id);
+CREATE INDEX IF NOT EXISTS idx_samples_freq ON samples(frequency, timestamp);
+CREATE INDEX IF NOT EXISTS idx_telemetry_session ON telemetry(session_id);
