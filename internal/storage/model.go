@@ -23,6 +23,7 @@ type SessionData[T Config] struct {
 
 // SampleData represents a single frequency measurement
 type SampleData struct {
+	ID          int64
 	SessionID   int64
 	Timestamp   time.Time
 	Frequency   float64

@@ -46,7 +46,7 @@ func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, e
 		return 0, fmt.Errorf("marshaling config: %w", err)
 	}
 
-	stmt, err := s.db.Prepare(`INSERT INTO session_info (start_time, device_type, device_id, config_json) VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`)
+	stmt, err := s.db.Prepare(`INSERT INTO sessions (start_time, device_type, device_id, config_json) VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`)
 	if err != nil {
 		return 0, fmt.Errorf("preparing statement: %w", err)
 	}
@@ -91,6 +91,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		t.AccelX,
 		t.AccelY,
 		t.AccelZ,
+		t.GroundSpeed,
+		t.GroundCourse,
 		t.RadioRSSI,
 	)
 	if err != nil {

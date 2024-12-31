@@ -1,10 +1,10 @@
 -- Session metadata (one record per device in a multi-device capture)
-CREATE TABLE session_info (
+CREATE TABLE sessions (
     id INTEGER PRIMARY KEY,
     start_time DATETIME NOT NULL,
     device_type TEXT NOT NULL,    -- 'rtl-sdr' or 'hackrf'
     device_id TEXT NOT NULL,      -- Serial number or unique identifier
-    config_json TEXT NOT NULL,    -- Device config
+    config TEXT NOT NULL,         -- Device config
     UNIQUE(device_id, start_time) -- Prevent duplicate device sessions
 );
 
@@ -22,8 +22,10 @@ CREATE TABLE telemetry (
     accel_x REAL,                -- X-axis acceleration
     accel_y REAL,                -- Y-axis acceleration
     accel_z REAL,                -- Z-axis acceleration
+    ground_speed REAL,           -- Ground speed in m/s
+    ground_course REAL,          -- Ground course in degrees
     radio_rssi INTEGER,          -- Radio link RSSI
-    FOREIGN KEY(session_id) REFERENCES session_info(id) ON DELETE CASCADE
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
 -- Core samples table
@@ -36,7 +38,7 @@ CREATE TABLE samples (
     power REAL,                   -- Signal power in dBm
     num_samples INTEGER NOT NULL, -- Number of samples in bin (NULL for HackRF)
     telemetry_id INTEGER,         -- Foreign key to telemetry data
-    FOREIGN KEY(session_id) REFERENCES session_info(id) ON DELETE CASCADE,
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
     FOREIGN KEY(telemetry_id) REFERENCES telemetry(id) ON DELETE SET NULL
 );
 
