@@ -166,9 +166,7 @@ func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
 
 	var telemetryID sql.NullInt64
 	if o.telemetry != nil {
-		var data storage.TelemetryData
-
-		data.FromTelemetry(o.telemetry.Get())
+		data := telemetryToModel(o.telemetry.Get())
 		data.SessionID = sessionID
 
 		if id, err := o.store.InsertTelemetry(data); err != nil {
@@ -185,7 +183,7 @@ func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
 	for i, reading := range r.Readings {
 		data[i] = storage.SampleData{
 			SessionID: sessionID,
-			Timestamp: r.Timestamp,
+			Timestamp: r.Timestamp.UTC(),
 			Frequency: reading.Frequency,
 			BinWidth:  r.BinWidth,
 			Power: sql.NullFloat64{
@@ -204,4 +202,71 @@ func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
 	}
 
 	return nil
+}
+
+func telemetryToModel(t *telemetry.Telemetry) storage.TelemetryData {
+	var td storage.TelemetryData
+
+	td.Timestamp = t.Timestamp.UTC()
+
+	td.Latitude = sql.NullFloat64{
+		Float64: *t.Latitude,
+		Valid:   t.Latitude != nil,
+	}
+
+	td.Longitude = sql.NullFloat64{
+		Float64: *t.Longitude,
+		Valid:   t.Longitude != nil,
+	}
+
+	td.Altitude = sql.NullFloat64{
+		Float64: *t.Altitude,
+		Valid:   t.Altitude != nil,
+	}
+
+	td.Roll = sql.NullFloat64{
+		Float64: *t.Roll,
+		Valid:   t.Roll != nil,
+	}
+
+	td.Pitch = sql.NullFloat64{
+		Float64: *t.Pitch,
+		Valid:   t.Pitch != nil,
+	}
+
+	td.Yaw = sql.NullFloat64{
+		Float64: *t.Yaw,
+		Valid:   t.Yaw != nil,
+	}
+
+	td.AccelX = sql.NullFloat64{
+		Float64: *t.AccelX,
+		Valid:   t.AccelX != nil,
+	}
+	td.AccelY = sql.NullFloat64{
+		Float64: *t.AccelY,
+		Valid:   t.AccelY != nil,
+	}
+
+	td.AccelZ = sql.NullFloat64{
+		Float64: *t.AccelZ,
+		Valid:   t.AccelZ != nil,
+	}
+
+	td.GroundSpeed = sql.NullInt16{
+		Int16: int16(*t.GroundSpeed),
+		Valid: t.GroundSpeed != nil,
+	}
+
+	td.GroundCourse = sql.NullInt16{
+		Int16: int16(*t.GroundCourse),
+		Valid: t.GroundCourse != nil,
+	}
+
+	td.RadioRSSI = sql.NullInt16{
+		Int16: int16(*t.RadioRSSI),
+		Valid: t.RadioRSSI != nil,
+	}
+
+	return td
 }
