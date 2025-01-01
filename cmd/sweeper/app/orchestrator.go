@@ -190,7 +190,7 @@ func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
 				Float64: reading.Power,
 				Valid:   reading.IsValid,
 			},
-			NumSamples:  r.NumSamples,
+			NumSamples:  int64(r.NumSamples),
 			TelemetryID: telemetryID,
 		}
 	}
@@ -205,68 +205,62 @@ func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
 }
 
 func telemetryToModel(t *telemetry.Telemetry) storage.TelemetryData {
-	var td storage.TelemetryData
-
-	td.Timestamp = t.Timestamp.UTC()
-
-	td.Latitude = sql.NullFloat64{
-		Float64: *t.Latitude,
-		Valid:   t.Latitude != nil,
+	return storage.TelemetryData{
+		Timestamp: t.Timestamp.UTC(),
+		Latitude: sql.NullFloat64{
+			Float64: toNumber[float64](t.Latitude),
+			Valid:   t.Latitude != nil,
+		},
+		Longitude: sql.NullFloat64{
+			Float64: toNumber[float64](t.Longitude),
+			Valid:   t.Longitude != nil,
+		},
+		Altitude: sql.NullFloat64{
+			Float64: toNumber[float64](t.Altitude),
+			Valid:   t.Altitude != nil,
+		},
+		Roll: sql.NullFloat64{
+			Float64: toNumber[float64](t.Roll),
+			Valid:   t.Roll != nil,
+		},
+		Pitch: sql.NullFloat64{
+			Float64: toNumber[float64](t.Pitch),
+			Valid:   t.Pitch != nil,
+		},
+		Yaw: sql.NullFloat64{
+			Float64: toNumber[float64](t.Yaw),
+			Valid:   t.Yaw != nil,
+		},
+		AccelX: sql.NullFloat64{
+			Float64: toNumber[float64](t.AccelX),
+			Valid:   t.AccelX != nil,
+		},
+		AccelY: sql.NullFloat64{
+			Float64: toNumber[float64](t.AccelY),
+			Valid:   t.AccelY != nil,
+		},
+		AccelZ: sql.NullFloat64{
+			Float64: toNumber[float64](t.AccelZ),
+			Valid:   t.AccelZ != nil,
+		},
+		GroundSpeed: sql.NullInt64{
+			Int64: toNumber[int64](t.GroundSpeed),
+			Valid: t.GroundSpeed != nil,
+		},
+		GroundCourse: sql.NullInt64{
+			Int64: toNumber[int64](t.GroundCourse),
+			Valid: t.GroundCourse != nil,
+		},
+		RadioRSSI: sql.NullInt64{
+			Int64: toNumber[int64](t.RadioRSSI),
+			Valid: t.RadioRSSI != nil,
+		},
 	}
+}
 
-	td.Longitude = sql.NullFloat64{
-		Float64: *t.Longitude,
-		Valid:   t.Longitude != nil,
+func toNumber[T float64 | int64, Y float64 | int](f *Y) T {
+	if f == nil {
+		return 0
 	}
-
-	td.Altitude = sql.NullFloat64{
-		Float64: *t.Altitude,
-		Valid:   t.Altitude != nil,
-	}
-
-	td.Roll = sql.NullFloat64{
-		Float64: *t.Roll,
-		Valid:   t.Roll != nil,
-	}
-
-	td.Pitch = sql.NullFloat64{
-		Float64: *t.Pitch,
-		Valid:   t.Pitch != nil,
-	}
-
-	td.Yaw = sql.NullFloat64{
-		Float64: *t.Yaw,
-		Valid:   t.Yaw != nil,
-	}
-
-	td.AccelX = sql.NullFloat64{
-		Float64: *t.AccelX,
-		Valid:   t.AccelX != nil,
-	}
-	td.AccelY = sql.NullFloat64{
-		Float64: *t.AccelY,
-		Valid:   t.AccelY != nil,
-	}
-
-	td.AccelZ = sql.NullFloat64{
-		Float64: *t.AccelZ,
-		Valid:   t.AccelZ != nil,
-	}
-
-	td.GroundSpeed = sql.NullInt16{
-		Int16: int16(*t.GroundSpeed),
-		Valid: t.GroundSpeed != nil,
-	}
-
-	td.GroundCourse = sql.NullInt16{
-		Int16: int16(*t.GroundCourse),
-		Valid: t.GroundCourse != nil,
-	}
-
-	td.RadioRSSI = sql.NullInt16{
-		Int16: int16(*t.RadioRSSI),
-		Valid: t.RadioRSSI != nil,
-	}
-
-	return td
+	return T(*f)
 }

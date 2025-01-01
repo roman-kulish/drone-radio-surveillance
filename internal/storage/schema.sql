@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS samples (
 CREATE VIEW IF NOT EXISTS v_samples_with_telemetry AS
 SELECT
     s.*,
-    t.timestamp AS telemetry_timestamp,
     t.latitude,
     t.longitude,
     t.altitude,

@@ -21,7 +21,7 @@ type SampleData struct {
 	Frequency   float64
 	BinWidth    float64
 	Power       sql.NullFloat64
-	NumSamples  int
+	NumSamples  int64
 	TelemetryID sql.NullInt64
 }
 
@@ -39,13 +39,7 @@ type TelemetryData struct {
 	AccelX       sql.NullFloat64
 	AccelY       sql.NullFloat64
 	AccelZ       sql.NullFloat64
-	GroundSpeed  sql.NullInt16
-	GroundCourse sql.NullInt16
-	RadioRSSI    sql.NullInt16
-}
-
-// SampleWithTelemetryData represents a single frequency measurement with telemetry data
-type SampleWithTelemetryData struct {
-	SampleData
-	Telemetry *TelemetryData
+	GroundSpeed  sql.NullInt64
+	GroundCourse sql.NullInt64
+	RadioRSSI    sql.NullInt64
 }

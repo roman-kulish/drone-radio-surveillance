@@ -28,10 +28,10 @@ type Telemetry struct {
 	// GPS
 	Latitude    *float64
 	Longitude   *float64
-	GroundSpeed *uint16
+	GroundSpeed *int
 
 	// Magnetometer
-	GroundCourse *uint16
+	GroundCourse *int
 
 	// Radio
 	RadioRSSI *int
