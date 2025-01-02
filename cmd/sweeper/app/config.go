@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
-	"github.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr/hackrf"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr/rtl"
 	"gopkg.in/yaml.v3"
 )
 

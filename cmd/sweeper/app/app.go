@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.con/roman-kulish/radio-surveillance/internal/storage"
+	"github.com/roman-kulish/radio-surveillance/internal/storage"
 )
 
 const (

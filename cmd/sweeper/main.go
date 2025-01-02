@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.con/roman-kulish/radio-surveillance/cmd/sweeper/app"
+	"github.com/roman-kulish/radio-surveillance/cmd/sweeper/app"
 )
 
 func main() {

@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.con/roman-kulish/radio-surveillance/internal/sdr"
-	"github.con/roman-kulish/radio-surveillance/internal/sdr/hackrf"
-	"github.con/roman-kulish/radio-surveillance/internal/sdr/rtl"
-	"github.con/roman-kulish/radio-surveillance/internal/storage"
-	"github.con/roman-kulish/radio-surveillance/internal/telemetry"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr/hackrf"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr/rtl"
+	"github.com/roman-kulish/radio-surveillance/internal/storage"
+	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
 // WithTelemetry sets the telemetry provider to use for enriching sweep results

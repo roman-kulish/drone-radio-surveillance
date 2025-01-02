@@ -10,9 +10,9 @@ import (
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.con/roman-kulish/radio-surveillance/internal/sdr"
-	"github.con/roman-kulish/radio-surveillance/internal/spectrum"
-	"github.con/roman-kulish/radio-surveillance/internal/telemetry"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr"
+	"github.com/roman-kulish/radio-surveillance/internal/spectrum"
+	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
 // Store provides an interface for managing radio surveillance data storage operations.

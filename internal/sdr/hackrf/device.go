@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.con/roman-kulish/radio-surveillance/internal/sdr"
+	"github.com/roman-kulish/radio-surveillance/internal/sdr"
 )
 
 const (
