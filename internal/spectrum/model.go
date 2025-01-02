@@ -2,6 +2,8 @@ package spectrum
 
 import (
 	"time"
+
+	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
 // ScanSession represents a single spectrum scanning session with a specific device.
@@ -23,22 +25,15 @@ type SpectralPoint struct {
 	NumSamples int      // Number of samples used for this measurement
 }
 
+func (p SpectralPoint) CentralFrequency() float64 {
+	return p.Frequency
+}
+
 // SpectralPointWithTelemetry extends SpectralPoint with drone telemetry data,
 // associating spectrum measurements with the drone's state and position.
 type SpectralPointWithTelemetry struct {
 	SpectralPoint
-	Altitude     *float64 // Barometric altitude in meters
-	Roll         *float64 // Roll angle in degrees
-	Pitch        *float64 // Pitch angle in degrees
-	Yaw          *float64 // Yaw angle in degrees
-	AccelX       *float64 // X-axis acceleration in m/s²
-	AccelY       *float64 // Y-axis acceleration in m/s²
-	AccelZ       *float64 // Z-axis acceleration in m/s²
-	Latitude     *float64 // GPS latitude in degrees
-	Longitude    *float64 // GPS longitude in degrees
-	GroundSpeed  *float64 // Ground speed in m/s
-	GroundCourse *float64 // Ground course (heading) in degrees
-	RadioRSSI    *int64   // Radio link RSSI in dBm
+	Telemetry *telemetry.Telemetry // Drone telemetry data, if exists
 }
 
 // SpectralSpan represents a complete spectrum measurement at a point in time.

@@ -118,13 +118,13 @@ func (s *store) getWriteDB() (*sql.DB, error) {
 	s.writeDBOnce.Do(func() {
 		db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", s.dbPath)
 		if err != nil {
-			s.writeDBErr = err
+			s.writeDBErr = fmt.Errorf("opening write connection: %w", err)
 			return
 		}
 
 		if err = initSchema(db); err != nil {
 			_ = db.Close()
-			s.writeDBErr = err
+			s.writeDBErr = fmt.Errorf("initialising schema: %w", err)
 			return
 		}
 
@@ -138,25 +138,13 @@ func (s *store) getReadDB() (*sql.DB, error) {
 	s.readDBOnce.Do(func() {
 		db, err := sql.Open("sqlite3?mode=ro", s.dbPath)
 		if err != nil {
-			s.readDBErr = err
+			s.readDBErr = fmt.Errorf("opening read connection: %w", err)
 			return
 		}
 		s.readDB = db
 	})
 
 	return s.readDB, s.readDBErr
-}
-
-func closeWithError(cl interface{ Close() error }, err *error) {
-	if cErr := cl.Close(); cErr != nil && *err == nil {
-		*err = cErr
-	}
-}
-
-func rollbackWithError(rb interface{ Rollback() error }, err *error) {
-	if cErr := rb.Rollback(); cErr != nil && *err == nil {
-		*err = cErr
-	}
 }
 
 func (s *store) CreateSession(ctx context.Context, deviceType, deviceID string, config any) (sessionID int64, err error) {
@@ -264,6 +252,48 @@ func (s *store) Sessions(ctx context.Context) (sessions []*spectrum.ScanSession,
 		sessions = append(sessions, &sess)
 	}
 	return
+}
+
+// ReadSpectrum creates a new SpectrumReader with the given options.
+// This reader returns basic spectral points.
+func (s *store) ReadSpectrum(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPoint]) (SpectrumReader[spectrum.SpectralPoint], error) {
+	db, err := s.getReadDB()
+	if err != nil {
+		return nil, fmt.Errorf("getting read connection: %w", err)
+	}
+
+	r := spectrumReader[spectrum.SpectralPoint]{db: db, sessionID: sessionID}
+	for _, opt := range opts {
+		opt(&r)
+	}
+
+	if err = r.init(ctx); err != nil {
+		return nil, fmt.Errorf("initialising reader: %w", err)
+	}
+	return &r, nil
+}
+
+// ReadSpectrumWithTelemetry creates a new SpectrumReader with the given options.
+// This reader returns spectral points enriched with telemetry data.
+func (s *store) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPointWithTelemetry]) (SpectrumReader[spectrum.SpectralPointWithTelemetry], error) {
+	db, err := s.getReadDB()
+	if err != nil {
+		return nil, fmt.Errorf("getting read connection: %w", err)
+	}
+
+	r := spectrumReader[spectrum.SpectralPointWithTelemetry]{
+		db:               db,
+		includeTelemetry: true,
+		sessionID:        sessionID,
+	}
+	for _, opt := range opts {
+		opt(&r)
+	}
+
+	if err = r.init(ctx); err != nil {
+		return nil, fmt.Errorf("initialising reader: %w", err)
+	}
+	return &r, nil
 }
 
 func (s *store) StoreTelemetry(ctx context.Context, sessionID int64, t *telemetry.Telemetry) (telemetryID int64, err error) {

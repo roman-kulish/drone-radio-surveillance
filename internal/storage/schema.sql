@@ -44,7 +44,12 @@ CREATE TABLE IF NOT EXISTS telemetry (
 
 CREATE VIEW IF NOT EXISTS v_samples_with_telemetry AS
 SELECT
-    s.*,
+    s.timestamp,
+    s.frequency,
+    s.bin_width,
+    s.power,
+    s.num_samples,
+    s.telemetry_id,
     t.latitude,
     t.longitude,
     t.altitude,

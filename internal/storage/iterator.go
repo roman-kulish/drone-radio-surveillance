@@ -1,316 +1,236 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/roman-kulish/radio-surveillance/internal/spectrum"
+	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
-func WithMinFreq[T Sample | SampleWithTelemetry](minFreq float64) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.minFreq = &minFreq
+// SpectralData is a constraint for types that can represent spectrum measurements,
+// either basic spectral points or those enriched with telemetry data.
+type SpectralData interface {
+	spectrum.SpectralPoint | spectrum.SpectralPointWithTelemetry
+
+	CentralFrequency() float64
+}
+
+// SpectrumReader provides an iterator-based interface for reading spectrum data
+// with optional time and frequency filtering. The type parameter T determines whether
+// the reader returns basic spectral points or points with telemetry data.
+type SpectrumReader[T SpectralData] interface {
+	// Session returns metadata about the capture session this reader is accessing.
+	// This includes device information, timing, and configuration details.
+	Session() *spectrum.ScanSession
+
+	// Next advances the iterator and returns true if there is another spectrum point
+	// to read, false when the iteration is complete or if an error occurred.
+	Next(context.Context) bool
+
+	// Current returns the current spectral span in the iteration.
+	// If called after Next() returns false, the behavior is undefined.
+	Current() *spectrum.SpectralSpan[T]
+
+	// Error returns any error that occurred during iteration.
+	// If Next() returns false, Err() should be checked to distinguish between
+	// end of data and an error condition.
+	Error() error
+
+	// Close releases any resources associated with the reader.
+	// After Close is called, the reader should not be used.
+	Close() error
+}
+
+// ReaderOption configures a SpectrumReader with specific filtering criteria.
+// The type parameter T must match the reader being configured.
+type ReaderOption[T SpectralData] func(*spectrumReader[T])
+
+// WithMinFreq sets the minimum frequency filter for the spectrum reader.
+// Spectrum points with frequencies below this value will be excluded.
+func WithMinFreq[T SpectralData](f float64) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.minFreq = &f
 	}
 }
 
-func WithMaxFreq[T Sample | SampleWithTelemetry](maxFreq float64) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.maxFreq = &maxFreq
+// WithMaxFreq sets the maximum frequency filter for the spectrum reader.
+// Spectrum points with frequencies above this value will be excluded.
+func WithMaxFreq[T SpectralData](f float64) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.maxFreq = &f
 	}
 }
 
-func withMinMaxFreq[T Sample | SampleWithTelemetry](minFreq, maxFreq float64) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.minFreq = &minFreq
-		i.maxFreq = &maxFreq
+// WithFreqRange sets both minimum and maximum frequency filters.
+// This is a convenience function equivalent to applying both WithMinFreq
+// and WithMaxFreq.
+func WithFreqRange[T SpectralData](minFreq, maxFreq float64) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.minFreq = &minFreq
+		r.maxFreq = &maxFreq
 	}
 }
 
-func WithStartTime[T Sample | SampleWithTelemetry](startTime time.Time) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.startTime = &startTime
+// WithStartTime sets the start time filter for the spectrum reader.
+// Spectrum points with timestamps before this time will be excluded.
+func WithStartTime[T SpectralData](t time.Time) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.startTime = &t
 	}
 }
 
-func WithEndTime[T Sample | SampleWithTelemetry](endTime time.Time) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.endTime = &endTime
+// WithEndTime sets the end time filter for the spectrum reader.
+// Spectrum points with timestamps after this time will be excluded.
+func WithEndTime[T SpectralData](t time.Time) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.endTime = &t
 	}
 }
 
-func WithTimeRange[T Sample | SampleWithTelemetry](startTime, endTime time.Time) func(*SpanIterator[T]) {
-	return func(i *SpanIterator[T]) {
-		i.startTime = &startTime
-		i.endTime = &endTime
+// WithTimeRange sets both start and end time filters.
+// This is a convenience function equivalent to applying both WithStartTime
+// and WithEndTime.
+func WithTimeRange[T SpectralData](startTime, endTime time.Time) ReaderOption[T] {
+	return func(r *spectrumReader[T]) {
+		r.startTime = &startTime
+		r.endTime = &endTime
 	}
 }
 
-// SpanIterator provides buffered iteration over frequency spans
-type SpanIterator[T Sample | SampleWithTelemetry] struct {
-	db               *sql.DB
+// spectrumReader implements SpectrumReader for SQLite database backend.
+type spectrumReader[T SpectralData] struct {
+	db *sql.DB
+
 	sessionID        int64
-	session          Session
+	session          *spectrum.ScanSession
 	includeTelemetry bool
-	startTime        *time.Time
-	endTime          *time.Time
-	minFreq          *float64
-	maxFreq          *float64
 
-	currentSpan *FrequencySpan[T]
-	nextSpan    *FrequencySpan[T]
-	rows        *sql.Rows
-	err         error
+	startTime *time.Time // Optional start of time range filter
+	endTime   *time.Time // Optional end of time range filter
+	minFreq   *float64   // Optional minimum frequency filter
+	maxFreq   *float64   // Optional maximum frequency filter
+
+	currentSpan            *spectrum.SpectralSpan[T]
+	nextSample             T // First sample of next span
+	nextSampleExists       bool
+	nextSpanStartTimestamp time.Time
+	rows                   *sql.Rows
+	err                    error
 }
 
-// Next advances to the next frequency span
-func (si *SpanIterator[T]) Next() bool {
-	var currentTimestamp time.Time
-	var samples []Sample
-	var firstSample bool = true
-	var startFreq float64
-
-	for si.rows.Next() {
-		var timestamp time.Time
-		var freq, power, binWidth float64
-
-		if err := i.rows.Scan(&timestamp, &freq, &power, &binWidth); err != nil {
-			i.err = err
-			return false
-		}
-
-		// Handle first sample
-		if firstSample {
-			currentTimestamp = timestamp
-			startFreq = freq
-			firstSample = false
-		}
-
-		// If timestamp changed, buffer the span and start a new one
-		if timestamp != currentTimestamp {
-			// Store completed span
-			span := &FrequencySpan{
-				Timestamp:  currentTimestamp,
-				StartFreq:  startFreq,
-				EndFreq:    freq,
-				Samples:    samples,
-				IsComplete: true,
-			}
-
-			// If this is first span, make it current
-			if len(i.buffer) == 0 {
-				i.currentSpan = span
-			} else {
-				i.buffer = append(i.buffer, span)
-			}
-
-			// Start new span
-			samples = []Sample{}
-			currentTimestamp = timestamp
-			startFreq = freq
-		}
-
-		// Add sample to current collection
-		samples = append(samples, Sample{
-			Frequency: freq,
-			Power:     power,
-			BinWidth:  binWidth,
-		})
+func (sr *spectrumReader[T]) init(ctx context.Context) error {
+	if sr.db == nil {
+		return errors.New("database connection required")
 	}
-
-	// Handle any remaining samples
-	if len(samples) > 0 {
-		span := &FrequencySpan{
-			Timestamp:  currentTimestamp,
-			StartFreq:  startFreq,
-			EndFreq:    samples[len(samples)-1].Frequency,
-			Samples:    samples,
-			IsComplete: true,
+	if sr.sessionID <= 0 {
+		return errors.New("session ID required")
+	}
+	for _, fn := range []func(context.Context) error{sr.loadSession, sr.initFilters, sr.initQuery} {
+		if err := fn(ctx); err != nil {
+			return fmt.Errorf("initializing reader: %w", err)
 		}
-
-		if i.currentSpan == nil {
-			i.currentSpan = span
-		} else {
-			i.buffer = append(i.buffer, span)
-		}
-	}
-
-	return i.currentSpan != nil
-}
-
-// Current returns the current frequency span
-func (si *SpanIterator[T]) Current() *FrequencySpan[T] {
-	return si.currentSpan
-}
-
-// Error returns any error that occurred during iteration
-func (si *SpanIterator[T]) Error() error {
-	if si.err != nil {
-		return si.err
-	}
-	return si.rows.Err()
-}
-
-// Close releases the database resources
-func (si *SpanIterator[T]) Close() error {
-	return si.rows.Close()
-}
-
-func (si *SpanIterator[T]) init() error {
-	if err := si.initSession(); err != nil {
-		return fmt.Errorf("loading session data: %w", err)
-	}
-	if err := si.initFilters(); err != nil {
-		return fmt.Errorf("setting up filters: %w", err)
-	}
-	if err := si.initQuery(); err != nil {
-		return fmt.Errorf("setting up query: %w", err)
 	}
 	return nil
 }
 
-func (si *SpanIterator[T]) initSession() error {
-	var session sessionData
-	stmt, err := si.db.Prepare(selectSessionSQL)
+func (sr *spectrumReader[T]) loadSession(ctx context.Context) (err error) {
+	stmt, err := sr.db.PrepareContext(ctx, selectSessionSQL)
 	if err != nil {
-		return err
+		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close()
+	defer closeWithError(stmt, &err)
 
-	if err = stmt.QueryRow(si.sessionID).Scan(&session.StartTime, &session.DeviceType, &session.DeviceID, &session.Config); err != nil {
-		return err
+	var sess spectrum.ScanSession
+	var config sql.NullString
+	if err = stmt.QueryRowContext(ctx, sr.sessionID).Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &config); err != nil {
+		return fmt.Errorf("querying session: %w", err)
+	}
+	if config.Valid {
+		sess.Config = &config.String
 	}
 
-	var config *string
-	if session.Config.Valid {
-		config = &session.Config.String
-	}
-
-	si.session = Session{
-		ID:         si.sessionID,
-		StartTime:  session.StartTime,
-		DeviceType: session.DeviceType,
-		DeviceID:   session.DeviceID,
-		Config:     config,
-	}
-	return nil
+	sr.session = &sess
+	return
 }
 
-const selectFilterValuesSQL = `
-SELECT 
-    MIN(frequency), 
-    MAX(frequency), 
-    MIN(timestamp), 
-    MAX(timestamp)
-FROM samples
-WHERE session_id = ?
-`
+func (sr *spectrumReader[T]) initFilters(ctx context.Context) (err error) {
+	timeFiltersSet := sr.startTime != nil && sr.endTime != nil
+	freqFiltersSet := sr.minFreq != nil && sr.maxFreq != nil
 
-func (si *SpanIterator[T]) initFilters() error {
-	if si.minFreq != nil && si.maxFreq != nil && si.startTime != nil && si.endTime != nil {
+	if timeFiltersSet {
+		if sr.startTime.After(*sr.endTime) {
+			return fmt.Errorf("start time %s is after end time %s", sr.startTime, sr.endTime)
+		}
+	}
+	if freqFiltersSet {
+		if *sr.minFreq > *sr.maxFreq {
+			return fmt.Errorf("min frequency %f is greater than max frequency %f", *sr.minFreq, *sr.maxFreq)
+		}
+	}
+	if timeFiltersSet && freqFiltersSet {
 		return nil
 	}
 
+	stmt, err := sr.db.PrepareContext(ctx, selectFilterValuesSQL)
+	if err != nil {
+		return fmt.Errorf("preparing statement: %w", err)
+	}
+	defer closeWithError(stmt, &err)
+
 	var minFreq, maxFreq float64
 	var startTime, endTime time.Time
-
-	// If frequency range not specified, get min/max from database.
-	// If time range not specified, get min/max from database.
-	stmt, err := si.db.Prepare(selectFilterValuesSQL)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
-
-	if err = stmt.QueryRow(si.sessionID).Scan(&minFreq, &maxFreq, &startTime, &endTime); err != nil {
-		return err
+	if err = stmt.QueryRowContext(ctx, sr.sessionID).Scan(&minFreq, &maxFreq, &startTime, &endTime); err != nil {
+		return fmt.Errorf("scanning session: %w", err)
 	}
 
-	if si.minFreq == nil {
-		si.minFreq = &minFreq
+	if sr.minFreq == nil {
+		sr.minFreq = &minFreq
 	}
-	if si.maxFreq == nil {
-		si.maxFreq = &maxFreq
+	if sr.maxFreq == nil {
+		sr.maxFreq = &maxFreq
 	}
-	if si.startTime == nil {
-		si.startTime = &startTime
+	if sr.startTime == nil {
+		sr.startTime = &startTime
 	}
-	if si.endTime == nil {
-		si.endTime = &endTime
+	if sr.endTime == nil {
+		sr.endTime = &endTime
 	}
 
 	return nil
 }
 
-const selectSamplesSQL = `
-SELECT 
-    timestamp, 
-    frequency, 
-    power, 
-    bin_width, 
-    num_samples
-FROM samples
-WHERE 
-    session_id = ?
-	AND timestamp BETWEEN ? AND ?
-  	AND frequency BETWEEN ? AND ?
-ORDER BY timestamp, frequency
-`
-
-const selectSamplesWithTelemetrySQL = `
-SELECT 
-    timestamp, 
-    frequency, 
-    power, 
-    bin_width, 
-    num_samples,
-    latitude,
-    longitude,
-    altitude,
-    roll,
-    pitch,
-    yaw,
-    accel_x,
-    accel_y,
-    accel_z,
-    ground_speed,
-    ground_course,
-    radio_rssi
-FROM v_samples_with_telemetry
-WHERE 
-    session_id = ?
-  	AND timestamp BETWEEN ? AND ?
-  	AND frequency BETWEEN ? AND ?
-ORDER BY timestamp, frequency
-`
-
-func (si *SpanIterator[T]) initQuery() error {
-	// Query ordered by timestamp and frequency to ensure proper span building
+func (sr *spectrumReader[T]) initQuery(ctx context.Context) (err error) {
 	query := selectSamplesSQL
-
-	if si.includeTelemetry {
+	if sr.includeTelemetry {
 		query = selectSamplesWithTelemetrySQL
 	}
 
-	stmt, err := si.db.Prepare(query)
+	stmt, err := sr.db.PrepareContext(ctx, query)
 	if err != nil {
+		return fmt.Errorf("preparing statement: %w", err)
+	}
+	defer closeWithError(stmt, &err)
+
+	if sr.rows, err = stmt.QueryContext(ctx, sr.sessionID, sr.startTime, sr.endTime, sr.minFreq, sr.maxFreq); err != nil {
 		return err
 	}
-	defer stmt.Close()
-
-	rows, err := stmt.Query(si.sessionID, si.startTime, si.endTime, si.minFreq, si.maxFreq)
-	if err != nil {
-		return err
-	}
-
-	si.rows = rows
 	return nil
 }
 
-func (si *SpanIterator[T]) scanSample() (time.Time, Sample, error) {
+func (sr *spectrumReader[T]) scanSample() (time.Time, T, error) {
+	var zero T
+
 	var sample sampleData
-	if err := si.rows.Scan(&sample.Timestamp, &sample.Frequency, &sample.Power, &sample.BinWidth, &sample.NumSamples); err != nil {
-		return time.Time{}, Sample{}, err
+	var timestamp time.Time
+
+	err := sr.rows.Scan(&timestamp, &sample.Frequency, &sample.Power, &sample.BinWidth, &sample.NumSamples)
+	if err != nil {
+		return time.Time{}, zero, fmt.Errorf("scanning sample: %w", err)
 	}
 
 	var power *float64
@@ -318,63 +238,210 @@ func (si *SpanIterator[T]) scanSample() (time.Time, Sample, error) {
 		power = &sample.Power.Float64
 	}
 
-	s := Sample{
+	point := spectrum.SpectralPoint{
 		Frequency:  sample.Frequency,
 		Power:      power,
 		BinWidth:   sample.BinWidth,
 		NumSamples: sample.NumSamples,
 	}
 
-	return sample.Timestamp, s, nil
+	result, ok := any(point).(T)
+	if !ok {
+		return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
+	}
+	return timestamp, result, nil
 }
 
-func (si *SpanIterator[T]) scanSampleWithTelemetry() (SampleWithTelemetry, error) {
+func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
+	var zero T
 
-}
-
-// Iterator provides access to the samples data
-type Iterator struct {
-	db *sql.DB
-}
-
-// NewIterator initializes and returns a new Iterator instance using the specified database path
-func NewIterator(dbPath string) (*Iterator, error) {
-	db, err := sql.Open("sqlite3?mode=ro", dbPath)
+	var sample sampleWithTelemetryData
+	var timestamp time.Time
+	err := sr.rows.Scan(
+		&timestamp,
+		&sample.Frequency,
+		&sample.Power,
+		&sample.BinWidth,
+		&sample.NumSamples,
+		&sample.TelemetryID,
+		&sample.Latitude,
+		&sample.Longitude,
+		&sample.Altitude,
+		&sample.Roll,
+		&sample.Pitch,
+		&sample.Yaw,
+		&sample.AccelX,
+		&sample.AccelY,
+		&sample.AccelZ,
+		&sample.GroundSpeed,
+		&sample.GroundCourse,
+		&sample.RadioRSSI,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("opening database: %w", err)
+		return time.Time{}, zero, fmt.Errorf("scanning sample: %w", err)
 	}
 
-	return &Iterator{db}, nil
+	var power *float64
+	if sample.Power.Valid {
+		power = &sample.Power.Float64
+	}
+
+	point := spectrum.SpectralPointWithTelemetry{
+		SpectralPoint: spectrum.SpectralPoint{
+			Frequency:  sample.Frequency,
+			Power:      power,
+			BinWidth:   sample.BinWidth,
+			NumSamples: sample.NumSamples,
+		},
+	}
+
+	if !sample.TelemetryID.Valid {
+		result, ok := any(point).(T)
+		if !ok {
+			return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
+		}
+		return timestamp, result, nil
+	}
+
+	point.Telemetry = &telemetry.Telemetry{}
+
+	if sample.Latitude.Valid {
+		point.Telemetry.Latitude = &sample.Latitude.Float64
+	}
+	if sample.Longitude.Valid {
+		point.Telemetry.Longitude = &sample.Longitude.Float64
+	}
+	if sample.Altitude.Valid {
+		point.Telemetry.Altitude = &sample.Altitude.Float64
+	}
+	if sample.Roll.Valid {
+		point.Telemetry.Roll = &sample.Roll.Float64
+	}
+	if sample.Pitch.Valid {
+		point.Telemetry.Pitch = &sample.Pitch.Float64
+	}
+	if sample.Yaw.Valid {
+		point.Telemetry.Yaw = &sample.Yaw.Float64
+	}
+	if sample.AccelX.Valid {
+		point.Telemetry.AccelX = &sample.AccelX.Float64
+	}
+	if sample.AccelY.Valid {
+		point.Telemetry.AccelY = &sample.AccelY.Float64
+	}
+	if sample.AccelZ.Valid {
+		point.Telemetry.AccelZ = &sample.AccelZ.Float64
+	}
+	if sample.GroundSpeed.Valid {
+		point.Telemetry.GroundSpeed = &sample.GroundSpeed.Float64
+	}
+	if sample.GroundCourse.Valid {
+		point.Telemetry.GroundCourse = &sample.GroundCourse.Float64
+	}
+	if sample.RadioRSSI.Valid {
+		point.Telemetry.RadioRSSI = &sample.RadioRSSI.Int64
+	}
+
+	result, ok := any(point).(T)
+	if !ok {
+		return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
+	}
+	return timestamp, result, nil
 }
 
-// Samples retrieves an iterator over frequency samples for the given session ID using optional configuration functions
-func (i Iterator) Samples(sessionID int64, options ...func(*SpanIterator[Sample])) (*SpanIterator[Sample], error) {
-	iter := &SpanIterator[Sample]{
-		db:        i.db,
-		sessionID: sessionID,
-	}
-	for _, option := range options {
-		option(iter)
-	}
-
-	return iter, iter.init()
+func (sr *spectrumReader[T]) Session() *spectrum.ScanSession {
+	return sr.session
 }
 
-// SamplesWithTelemetry retrieves an iterator over frequency samples with associated telemetry for the given session ID
-func (i Iterator) SamplesWithTelemetry(sessionID int64, options ...func(*SpanIterator[SampleWithTelemetry])) (*SpanIterator[SampleWithTelemetry], error) {
-	iter := &SpanIterator[SampleWithTelemetry]{
-		db:               i.db,
-		sessionID:        sessionID,
-		includeTelemetry: true,
-	}
-	for _, option := range options {
-		option(iter)
+func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
+	if sr.err != nil || sr.rows == nil {
+		return false
 	}
 
-	return iter, iter.init()
+	if sr.nextSampleExists {
+		sr.currentSpan = &spectrum.SpectralSpan[T]{
+			Timestamp: sr.nextSpanStartTimestamp,
+			StartFreq: sr.nextSample.CentralFrequency(),
+			Samples:   []T{sr.nextSample},
+		}
+		sr.nextSampleExists = false
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			sr.err = ctx.Err()
+			return false
+		default:
+		}
+
+		if !sr.rows.Next() {
+			if sr.currentSpan != nil {
+				if len(sr.currentSpan.Samples) > 0 {
+					lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
+					sr.currentSpan.EndFreq = lastSample.CentralFrequency()
+				}
+				return true
+			}
+			return false
+		}
+
+		var timestamp time.Time
+		var sample T
+		if sr.includeTelemetry {
+			timestamp, sample, sr.err = sr.scanSampleWithTelemetry()
+		} else {
+			timestamp, sample, sr.err = sr.scanSample()
+		}
+		if sr.err != nil {
+			return false
+		}
+
+		// If no current span, create new one
+		if sr.currentSpan == nil {
+			sr.currentSpan = &spectrum.SpectralSpan[T]{
+				Timestamp: timestamp,
+				StartFreq: sample.CentralFrequency(),
+				Samples:   []T{sample},
+			}
+			continue
+		}
+
+		// Check for frequency rollover only
+		lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
+		if sample.CentralFrequency() < lastSample.CentralFrequency() {
+			// Frequency rolled over - complete current span
+			sr.currentSpan.EndFreq = lastSample.CentralFrequency()
+			sr.nextSample = sample
+			sr.nextSampleExists = true
+			sr.nextSpanStartTimestamp = timestamp
+			return true
+		}
+
+		// Add sample to current span
+		sr.currentSpan.Samples = append(sr.currentSpan.Samples, sample)
+	}
 }
 
-// Close releases any resources held by the Iterator, closing the underlying database connection
-func (i Iterator) Close() error {
-	return i.db.Close()
+func (sr *spectrumReader[T]) Current() *spectrum.SpectralSpan[T] {
+	return sr.currentSpan
+}
+
+func (sr *spectrumReader[T]) Error() error {
+	if sr.err != nil {
+		return sr.err
+	}
+	if sr.rows != nil {
+		return sr.rows.Err()
+	}
+	return nil
+}
+
+func (sr *spectrumReader[T]) Close() error {
+	if sr.rows != nil {
+		err := sr.rows.Close()
+		sr.rows = nil
+		return err
+	}
+	return nil
 }
