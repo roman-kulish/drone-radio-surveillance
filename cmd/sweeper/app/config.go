@@ -124,7 +124,6 @@ type TelemetryConfig struct {
 // StorageConfig represents storage settings
 type StorageConfig struct {
 	DataDirectory string `yaml:"dataDirectory"`
-	MaxBatchSize  int    `yaml:"maxBatchSize"`
 }
 
 // LoadConfig reads a configuration file from the specified path and parses it into a Config struct.

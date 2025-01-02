@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
-	"slices"
 	"sync"
 
 	"github.con/roman-kulish/radio-surveillance/internal/sdr"
@@ -14,16 +12,6 @@ import (
 	"github.con/roman-kulish/radio-surveillance/internal/storage"
 	"github.con/roman-kulish/radio-surveillance/internal/telemetry"
 )
-
-const maxBatchSize = 100
-
-// WithMaxBatchSize sets the maximum batch size of collected samples to store
-// within a single database transaction.
-func WithMaxBatchSize(size int) func(*Orchestrator) {
-	return func(o *Orchestrator) {
-		o.maxBatchSize = size
-	}
-}
 
 // WithTelemetry sets the telemetry provider to use for enriching sweep results
 func WithTelemetry(provider telemetry.Provider) func(*Orchestrator) {
@@ -41,23 +29,20 @@ type Orchestrator struct {
 	sessions map[string]int64
 
 	logger    *slog.Logger
-	store     *storage.Store
+	store     storage.Store
 	telemetry telemetry.Provider
-
-	maxBatchSize int
 
 	wg     sync.WaitGroup
 	cancel context.CancelFunc
 }
 
 // NewOrchestrator creates a new Orchestrator
-func NewOrchestrator(store *storage.Store, logger *slog.Logger, options ...func(*Orchestrator)) *Orchestrator {
+func NewOrchestrator(store storage.Store, logger *slog.Logger, options ...func(*Orchestrator)) *Orchestrator {
 	d := Orchestrator{
-		configs:      make(map[string]any),
-		sessions:     make(map[string]int64),
-		logger:       logger,
-		store:        store,
-		maxBatchSize: maxBatchSize,
+		configs:  make(map[string]any),
+		sessions: make(map[string]int64),
+		logger:   logger,
+		store:    store,
 	}
 
 	for _, option := range options {
@@ -106,8 +91,11 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	if len(o.devices) == 0 {
 		return fmt.Errorf("no devices to sample")
 	}
+
+	ctx, o.cancel = context.WithCancel(ctx)
+
 	for _, device := range o.devices {
-		sessionID, err := o.store.CreateSession(device.Device(), device.DeviceID(), o.configs[device.DeviceID()])
+		sessionID, err := o.store.CreateSession(ctx, device.Device(), device.DeviceID(), o.configs[device.DeviceID()])
 		if err != nil {
 			return fmt.Errorf("creating session for device %s: %w", device.DeviceID(), err)
 		}
@@ -115,11 +103,10 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		o.sessions[device.DeviceID()] = sessionID
 	}
 
-	ctx, o.cancel = context.WithCancel(ctx)
 	startGate := make(chan struct{})
-	samples := make(chan sdr.SweepResult, len(o.devices))
+	samples := make(chan *sdr.SweepResult, len(o.devices))
 
-	go o.handleSweepResults(samples)
+	go o.handleSweepResults(ctx, samples)
 
 	for _, device := range o.devices {
 		o.wg.Add(1)
@@ -136,7 +123,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	return nil
 }
 
-func (o *Orchestrator) beginSampling(ctx context.Context, dev *sdr.Device, samples chan<- sdr.SweepResult, startGate chan struct{}) {
+func (o *Orchestrator) beginSampling(ctx context.Context, dev *sdr.Device, samples chan<- *sdr.SweepResult, startGate chan struct{}) {
 	defer o.wg.Done()
 
 	<-startGate
@@ -153,114 +140,28 @@ func (o *Orchestrator) beginSampling(ctx context.Context, dev *sdr.Device, sampl
 	<-done // Wait for the device sampling goroutine to finish
 }
 
-func (o *Orchestrator) handleSweepResults(samples chan sdr.SweepResult) {
+func (o *Orchestrator) handleSweepResults(ctx context.Context, samples chan *sdr.SweepResult) {
 	for sample := range samples {
-		if err := o.storeSweepResult(sample); err != nil {
+		if err := o.storeSweepResult(ctx, sample); err != nil {
 			o.logger.Error(err.Error())
 		}
 	}
 }
 
-func (o *Orchestrator) storeSweepResult(r sdr.SweepResult) error {
+func (o *Orchestrator) storeSweepResult(ctx context.Context, r *sdr.SweepResult) error {
 	sessionID := o.sessions[r.DeviceID]
 
-	var telemetryID sql.NullInt64
+	var telemetryID *int64
 	if o.telemetry != nil {
-		data := telemetryToModel(o.telemetry.Get())
-		data.SessionID = sessionID
-
-		if id, err := o.store.InsertTelemetry(data); err != nil {
-			o.logger.Error(err.Error())
-		} else {
-			telemetryID = sql.NullInt64{
-				Int64: id,
-				Valid: true,
+		if tm := o.telemetry.Get(); tm != nil {
+			id, err := o.store.StoreTelemetry(ctx, sessionID, o.telemetry.Get())
+			if err != nil {
+				o.logger.Error(err.Error())
+			} else {
+				telemetryID = &id
 			}
 		}
 	}
 
-	data := make([]storage.SampleData, len(r.Readings))
-	for i, reading := range r.Readings {
-		data[i] = storage.SampleData{
-			SessionID: sessionID,
-			Timestamp: r.Timestamp.UTC(),
-			Frequency: reading.Frequency,
-			BinWidth:  r.BinWidth,
-			Power: sql.NullFloat64{
-				Float64: reading.Power,
-				Valid:   reading.IsValid,
-			},
-			NumSamples:  int64(r.NumSamples),
-			TelemetryID: telemetryID,
-		}
-	}
-
-	for chunk := range slices.Chunk(data, o.maxBatchSize) {
-		if err := o.store.BatchInsertSamples(chunk); err != nil {
-			return fmt.Errorf("storing samples: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func telemetryToModel(t *telemetry.Telemetry) storage.TelemetryData {
-	return storage.TelemetryData{
-		Timestamp: t.Timestamp.UTC(),
-		Latitude: sql.NullFloat64{
-			Float64: toNumber[float64](t.Latitude),
-			Valid:   t.Latitude != nil,
-		},
-		Longitude: sql.NullFloat64{
-			Float64: toNumber[float64](t.Longitude),
-			Valid:   t.Longitude != nil,
-		},
-		Altitude: sql.NullFloat64{
-			Float64: toNumber[float64](t.Altitude),
-			Valid:   t.Altitude != nil,
-		},
-		Roll: sql.NullFloat64{
-			Float64: toNumber[float64](t.Roll),
-			Valid:   t.Roll != nil,
-		},
-		Pitch: sql.NullFloat64{
-			Float64: toNumber[float64](t.Pitch),
-			Valid:   t.Pitch != nil,
-		},
-		Yaw: sql.NullFloat64{
-			Float64: toNumber[float64](t.Yaw),
-			Valid:   t.Yaw != nil,
-		},
-		AccelX: sql.NullFloat64{
-			Float64: toNumber[float64](t.AccelX),
-			Valid:   t.AccelX != nil,
-		},
-		AccelY: sql.NullFloat64{
-			Float64: toNumber[float64](t.AccelY),
-			Valid:   t.AccelY != nil,
-		},
-		AccelZ: sql.NullFloat64{
-			Float64: toNumber[float64](t.AccelZ),
-			Valid:   t.AccelZ != nil,
-		},
-		GroundSpeed: sql.NullInt64{
-			Int64: toNumber[int64](t.GroundSpeed),
-			Valid: t.GroundSpeed != nil,
-		},
-		GroundCourse: sql.NullInt64{
-			Int64: toNumber[int64](t.GroundCourse),
-			Valid: t.GroundCourse != nil,
-		},
-		RadioRSSI: sql.NullInt64{
-			Int64: toNumber[int64](t.RadioRSSI),
-			Valid: t.RadioRSSI != nil,
-		},
-	}
-}
-
-func toNumber[T float64 | int64, Y float64 | int](f *Y) T {
-	if f == nil {
-		return 0
-	}
-	return T(*f)
+	return o.store.StoreSweepResult(ctx, sessionID, telemetryID, r)
 }

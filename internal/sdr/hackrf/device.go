@@ -43,7 +43,7 @@ func (h handler) Cmd(ctx context.Context) *exec.Cmd {
 }
 
 // Parse parses a line of HackRF output and sends samples to the channel
-func (h handler) Parse(line string, deviceID string, sr chan<- sdr.SweepResult) error {
+func (h handler) Parse(line string, deviceID string, sr chan<- *sdr.SweepResult) error {
 	fields := strings.Split(line, ",")
 	if len(fields) < 7 {
 		return fmt.Errorf("invalid rtl_power output: not enough fields")
@@ -95,7 +95,7 @@ func (h handler) Parse(line string, deviceID string, sr chan<- sdr.SweepResult) 
 		result.Readings = append(result.Readings, reading)
 	}
 
-	sr <- result
+	sr <- &result
 	return nil
 }
 

@@ -23,9 +23,6 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 	defer store.Close()
 
 	var options []func(*Orchestrator)
-	if config.Storage.MaxBatchSize > 0 {
-		options = append(options, WithMaxBatchSize(config.Storage.MaxBatchSize))
-	}
 
 	// TODO: telemetry
 
@@ -39,7 +36,7 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 	return orchestrator.Run(ctx)
 }
 
-func createStorage(config *StorageConfig) (*storage.Store, error) {
+func createStorage(config *StorageConfig) (storage.Store, error) {
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get current working directory: %w", err)

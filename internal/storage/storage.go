@@ -1,23 +1,96 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.con/roman-kulish/radio-surveillance/internal/sdr"
+	"github.con/roman-kulish/radio-surveillance/internal/spectrum"
+	"github.con/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
-//go:embed schema.sql
-var schemaSQL string
+// Store provides an interface for managing radio surveillance data storage operations.
+// It handles sessions, telemetry data, and spectrum sweep results in a thread-safe manner.
+// All operations that write to the database should be considered atomic.
+type Store interface {
+	// CreateSession initializes a new scanning session and returns its unique identifier.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - deviceType: Type of SDR device (e.g., "rtl-sdr", "hackrf")
+	//   - deviceID: Unique identifier of the device (e.g., serial number)
+	//   - config: Optional device configuration. Can be string, []byte, or JSON-serializable object
+	//
+	// Returns:
+	//   - sessionID: Unique identifier for the created session
+	//   - error: If session creation fails or context is cancelled
+	CreateSession(ctx context.Context, deviceType, deviceID string, config any) (sessionID int64, err error)
 
-// SessionData represents a data collection session
+	// Session retrieves a specific scanning session by its ID.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - id: Unique session identifier
+	//
+	// Returns:
+	//   - session: Pointer to session data, nil if not found
+	//   - error: If retrieval fails or context is cancelled
+	Session(ctx context.Context, id int64) (session *spectrum.ScanSession, err error)
+
+	// Sessions returns all scanning sessions stored in the database.
+	// Results are ordered by start time in ascending order.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//
+	// Returns:
+	//   - sessions: Slice of pointers to session data
+	//   - error: If retrieval fails or context is cancelled
+	Sessions(ctx context.Context) (sessions []*spectrum.ScanSession, err error)
+
+	// StoreTelemetry saves drone telemetry data for a specific session.
+	// The telemetry data is linked to spectrum measurements for position correlation.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - sessionID: ID of the session this telemetry belongs to
+	//   - t: Telemetry data containing drone sensors readings
+	//
+	// Returns:
+	//   - telemetryID: Unique identifier for the stored telemetry record
+	//   - error: If storage fails or context is cancelled
+	StoreTelemetry(ctx context.Context, sessionID int64, t *telemetry.Telemetry) (telemetryID int64, err error)
+
+	// StoreSweepResult saves spectrum sweep data, optionally linked to telemetry.
+	// All readings in the sweep result are stored in a single atomic transaction.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - sessionID: ID of the session this sweep belongs to
+	//   - telemetryID: Optional ID linking to concurrent telemetry data
+	//   - result: Sweep result containing frequency power readings
+	//
+	// Returns:
+	//   - error: If storage fails or context is cancelled
+	StoreSweepResult(ctx context.Context, sessionID int64, telemetryID *int64, result *sdr.SweepResult) error
+
+	// Close releases all database connections and resources.
+	// After Close is called, the store instance cannot be reused.
+	// It is safe to call Close multiple times.
+	//
+	// Returns:
+	//   - error: If closing fails or some resources cannot be released
+	Close() error
+}
 
 // Store handles database operations
-type Store struct {
+type store struct {
 	dbPath string
 
 	writeDB     *sql.DB
@@ -33,8 +106,8 @@ type Store struct {
 }
 
 // New creates a new database connection and initializes the schema
-func New(dbPath string) (*Store, error) {
-	return &Store{dbPath: dbPath}, nil
+func New(dbPath string) (Store, error) {
+	return &store{dbPath: dbPath}, nil
 }
 
 func initSchema(db *sql.DB) error {
@@ -42,7 +115,7 @@ func initSchema(db *sql.DB) error {
 	return err
 }
 
-func (s *Store) getWriteDB() (*sql.DB, error) {
+func (s *store) getWriteDB() (*sql.DB, error) {
 	s.writeDBOnce.Do(func() {
 		db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", s.dbPath)
 		if err != nil {
@@ -62,7 +135,7 @@ func (s *Store) getWriteDB() (*sql.DB, error) {
 	return s.writeDB, s.writeDBErr
 }
 
-func (s *Store) getReadDB() (*sql.DB, error) {
+func (s *store) getReadDB() (*sql.DB, error) {
 	s.readDBOnce.Do(func() {
 		db, err := sql.Open("sqlite3?mode=ro", s.dbPath)
 		if err != nil {
@@ -75,12 +148,13 @@ func (s *Store) getReadDB() (*sql.DB, error) {
 	return s.readDB, s.readDBErr
 }
 
-const insertSessionSQL = `
-INSERT INTO sessions (start_time, device_type, device_id, config) 
-VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`
+func closeWithError(closer io.Closer, err *error) {
+	if cErr := closer.Close(); cErr != nil && *err == nil {
+		*err = cErr
+	}
+}
 
-// CreateSession creates a new session and returns its ID
-func (s *Store) CreateSession(deviceType, deviceID string, config any) (sessionID int64, err error) {
+func (s *store) CreateSession(ctx context.Context, deviceType, deviceID string, config any) (sessionID int64, err error) {
 	var configData sql.NullString
 
 	if config != nil {
@@ -111,175 +185,129 @@ func (s *Store) CreateSession(deviceType, deviceID string, config any) (sessionI
 		return
 	}
 
-	stmt, err := db.Prepare(insertSessionSQL)
+	stmt, err := db.PrepareContext(ctx, insertSessionSQL)
 	if err != nil {
 		err = fmt.Errorf("preparing statement: %w", err)
 		return
 	}
-	defer func() {
-		if cErr := stmt.Close(); cErr != nil && err == nil {
-			err = fmt.Errorf("closing statement: %w", cErr)
-		}
-	}()
+	defer closeWithError(stmt, &err)
 
-	result, err := stmt.Exec(deviceType, deviceID, configData)
+	result, err := stmt.ExecContext(ctx, deviceType, deviceID, configData)
 	if err != nil {
 		err = fmt.Errorf("inserting session: %w", err)
 		return
 	}
 
-	return result.LastInsertId()
-}
-
-const selectSessionSQL = `
-SELECT 
-    id, 
-    start_time, 
-    device_type, 
-    device_id, 
-    config 
-FROM sessions 
-WHERE 
-    id = ?`
-
-// Session returns a session by its ID
-func (s *Store) Session(id int64) (session *SessionData, err error) {
-	db, err := s.getReadDB()
+	sessionID, err = result.LastInsertId()
 	if err != nil {
-		err = fmt.Errorf("getting read connection: %w", err)
-		return
-	}
-
-	stmt, err := db.Prepare(selectSessionSQL)
-	if err != nil {
-		err = fmt.Errorf("preparing statement: %w", err)
-		return
-	}
-	defer func() {
-		if cErr := stmt.Close(); cErr != nil && err == nil {
-			err = fmt.Errorf("closing statement: %w", cErr)
-		}
-	}()
-
-	var sess SessionData
-	if err = stmt.QueryRow(id).Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &sess.Config); err != nil {
-		err = fmt.Errorf("scanning session: %w", err)
-		return
-	}
-	return &sess, nil
-}
-
-const selectSessionsSQL = `
-SELECT 
-    id, 
-    start_time, 
-    device_type, 
-    device_id, 
-    config 
-FROM sessions
-`
-
-func (s *Store) Sessions() (sessions []SessionData, err error) {
-	db, err := s.getReadDB()
-	if err != nil {
-		err = fmt.Errorf("getting read connection: %w", err)
-		return
-	}
-
-	rows, err := db.Query(selectSessionsSQL)
-	if err != nil {
-		err = fmt.Errorf("querying sessions: %w", err)
-		return
-	}
-	defer func() {
-		if cErr := rows.Close(); cErr != nil && err == nil {
-			err = fmt.Errorf("closing rows: %w", cErr)
-		}
-	}()
-
-	for rows.Next() {
-		var sess SessionData
-		if err = rows.Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &sess.Config); err != nil {
-			err = fmt.Errorf("scanning session: %w", err)
-			return
-		}
-		sessions = append(sessions, sess)
+		err = fmt.Errorf("getting session ID: %w", err)
 	}
 	return
 }
 
-const insertTelemetrySQL = `
-INSERT INTO telemetry (session_id,
-                       timestamp,
-                       latitude,
-                       longitude,
-                       altitude,
-                       roll,
-                       pitch, yaw,
-                       accel_x,
-                       accel_y,
-                       accel_z,
-                       radio_rssi)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-`
+func (s *store) Session(ctx context.Context, id int64) (session *spectrum.ScanSession, err error) {
+	db, err := s.getReadDB()
+	if err != nil {
+		err = fmt.Errorf("getting read connection: %w", err)
+		return
+	}
 
-// InsertTelemetry inserts telemetry data and returns its ID
-func (s *Store) InsertTelemetry(t TelemetryData) (telemetryID int64, err error) {
+	stmt, err := db.PrepareContext(ctx, selectSessionSQL)
+	if err != nil {
+		err = fmt.Errorf("preparing statement: %w", err)
+		return
+	}
+	defer closeWithError(stmt, &err)
+
+	var sess spectrum.ScanSession
+	var config sql.NullString
+	if err = stmt.QueryRowContext(ctx, id).Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &config); err != nil {
+		err = fmt.Errorf("scanning session: %w", err)
+		return
+	}
+	if config.Valid {
+		sess.Config = &config.String
+	}
+
+	return &sess, nil
+}
+
+func (s *store) Sessions(ctx context.Context) (sessions []*spectrum.ScanSession, err error) {
+	db, err := s.getReadDB()
+	if err != nil {
+		err = fmt.Errorf("getting read connection: %w", err)
+		return
+	}
+
+	rows, err := db.QueryContext(ctx, selectSessionsSQL)
+	if err != nil {
+		err = fmt.Errorf("querying sessions: %w", err)
+		return
+	}
+	defer closeWithError(rows, &err)
+
+	for rows.Next() {
+		var sess spectrum.ScanSession
+		var config sql.NullString
+		if err = rows.Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &config); err != nil {
+			err = fmt.Errorf("scanning session: %w", err)
+			return
+		}
+		if config.Valid {
+			sess.Config = &config.String
+		}
+		sessions = append(sessions, &sess)
+	}
+	return
+}
+
+func (s *store) StoreTelemetry(ctx context.Context, sessionID int64, t *telemetry.Telemetry) (telemetryID int64, err error) {
 	db, err := s.getWriteDB()
 	if err != nil {
 		err = fmt.Errorf("getting write connection: %w", err)
 		return
 	}
 
-	stmt, err := db.Prepare(insertTelemetrySQL)
+	stmt, err := db.PrepareContext(ctx, insertTelemetrySQL)
 	if err != nil {
 		err = fmt.Errorf("preparing statement: %w", err)
 		return
 	}
-	defer func() {
-		if cErr := stmt.Close(); cErr != nil && err == nil {
-			err = fmt.Errorf("closing statement: %w", cErr)
-		}
-	}()
+	defer closeWithError(stmt, &err)
 
-	result, err := stmt.Exec(
-		t.SessionID,
-		t.Timestamp,
-		t.Latitude,
-		t.Longitude,
-		t.Altitude,
-		t.Roll,
-		t.Pitch,
-		t.Yaw,
-		t.AccelX,
-		t.AccelY,
-		t.AccelZ,
-		t.GroundSpeed,
-		t.GroundCourse,
-		t.RadioRSSI,
+	data := toTelemetryData(sessionID, t)
+
+	result, err := stmt.ExecContext(
+		ctx,
+		data.SessionID,
+		data.Timestamp,
+		data.Latitude,
+		data.Longitude,
+		data.Altitude,
+		data.Roll,
+		data.Pitch,
+		data.Yaw,
+		data.AccelX,
+		data.AccelY,
+		data.AccelZ,
+		data.GroundSpeed,
+		data.GroundCourse,
+		data.RadioRSSI,
 	)
 	if err != nil {
 		err = fmt.Errorf("inserting telemetry: %w", err)
 		return
 	}
 
-	return result.LastInsertId()
+	telemetryID, err = result.LastInsertId()
+	if err != nil {
+		err = fmt.Errorf("getting telemetry ID: %w", err)
+	}
+	return
 }
 
-const insertSampleSQL = `
-INSERT INTO samples (session_id,
-                     timestamp,
-                     frequency,
-                     bin_width,
-                     power,
-                     num_samples,
-                     telemetry_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-`
-
-// BatchInsertSamples inserts multiple samples in a single transaction
-func (s *Store) BatchInsertSamples(samples []SampleData) (err error) {
-	if len(samples) == 0 {
+func (s *store) StoreSweepResult(ctx context.Context, sessionID int64, telemetryID *int64, result *sdr.SweepResult) (err error) {
+	if len(result.Readings) == 0 {
 		return
 	}
 
@@ -288,35 +316,34 @@ func (s *Store) BatchInsertSamples(samples []SampleData) (err error) {
 		return fmt.Errorf("getting write connection: %w", err)
 	}
 
-	tx, err := db.Begin()
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer func() {
 		if cErr := tx.Rollback(); cErr != nil && err == nil {
-			err = fmt.Errorf("rolling back transaction: %w", cErr)
+			err = cErr
 		}
 	}()
 
-	stmt, err := tx.Prepare(insertSampleSQL)
+	stmt, err := tx.PrepareContext(ctx, insertSampleSQL)
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer func() {
-		if cErr := stmt.Close(); cErr != nil && err == nil {
-			err = fmt.Errorf("closing statement: %w", cErr)
-		}
-	}()
+	defer closeWithError(stmt, &err)
 
-	for _, sample := range samples {
-		_, err = stmt.Exec(
-			sample.SessionID,
-			sample.Timestamp,
-			sample.Frequency,
-			sample.BinWidth,
-			sample.Power,
-			sample.NumSamples,
-			sample.TelemetryID,
+	for _, sample := range result.Readings {
+		data := toSampleData(sessionID, telemetryID, sample, result)
+
+		_, err = stmt.ExecContext(
+			ctx,
+			data.SessionID,
+			data.Timestamp,
+			data.Frequency,
+			data.BinWidth,
+			data.Power,
+			data.NumSamples,
+			data.TelemetryID,
 		)
 		if err != nil {
 			return fmt.Errorf("inserting sample: %w", err)
@@ -329,8 +356,7 @@ func (s *Store) BatchInsertSamples(samples []SampleData) (err error) {
 	return
 }
 
-// Close closes the database connection
-func (s *Store) Close() error {
+func (s *store) Close() error {
 	s.closeOnce.Do(func() {
 		var writeErr, readErr error
 

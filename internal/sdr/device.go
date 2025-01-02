@@ -30,7 +30,7 @@ var (
 // Handler interface defines the methods required for handling a device
 type Handler interface {
 	Cmd(ctx context.Context) *exec.Cmd
-	Parse(line string, deviceID string, samples chan<- SweepResult) error
+	Parse(line string, deviceID string, samples chan<- *SweepResult) error
 	Device() string
 }
 
@@ -93,7 +93,7 @@ func (d *Device) Device() string {
 }
 
 // BeginSampling starts the device and collects samples, sending them to the samples channel
-func (d *Device) BeginSampling(ctx context.Context, sr chan<- SweepResult) (<-chan error, error) {
+func (d *Device) BeginSampling(ctx context.Context, sr chan<- *SweepResult) (<-chan error, error) {
 	if d.isSampling.Load() {
 		return nil, fmt.Errorf("device is already running")
 	}
@@ -175,7 +175,7 @@ func (d *Device) IsSampling() bool {
 }
 
 // handleStdout reads from stdout, parses and sends samples to the samples channel.
-func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- SweepResult, done chan<- error) {
+func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *SweepResult, done chan<- error) {
 	var parseErrors uint8
 
 	scanner := bufio.NewScanner(stdout)
