@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -16,31 +18,69 @@ var schemaSQL string
 
 // Store handles database operations
 type Store struct {
-	db *sql.DB
+	dbPath string
+
+	writeDB     *sql.DB
+	writeDBOnce sync.Once
+	writeDBErr  error
+
+	readDB     *sql.DB
+	readDBOnce sync.Once
+	readDBErr  error
+
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // New creates a new database connection and initializes the schema
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("opening database: %w", err)
-	}
-
-	if err = initSchema(db); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("initializing schema: %w", err)
-	}
-
-	return &Store{db}, nil
+	return &Store{dbPath: dbPath}, nil
 }
 
-// Close closes the database connection
-func (s *Store) Close() error {
-	return s.db.Close()
+func initSchema(db *sql.DB) error {
+	_, err := db.Exec(schemaSQL)
+	return err
 }
+
+func (s *Store) getWriteDB() (*sql.DB, error) {
+	s.writeDBOnce.Do(func() {
+		db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", s.dbPath)
+		if err != nil {
+			s.writeDBErr = err
+			return
+		}
+
+		if err = initSchema(db); err != nil {
+			_ = db.Close()
+			s.writeDBErr = err
+			return
+		}
+
+		s.writeDB = db
+	})
+
+	return s.writeDB, s.writeDBErr
+}
+
+func (s *Store) getReadDB() (*sql.DB, error) {
+	s.readDBOnce.Do(func() {
+		db, err := sql.Open("sqlite3?mode=ro", s.dbPath)
+		if err != nil {
+			s.readDBErr = err
+			return
+		}
+		s.readDB = db
+	})
+
+	return s.readDB, s.readDBErr
+}
+
+const insertSessionSQL = `
+INSERT INTO sessions (start_time, device_type, device_id, config) 
+VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`
 
 // CreateSession creates a new session and returns its ID
-func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, error) {
+func (s *Store) CreateSession(deviceType, deviceID string, config any) (sessionID int64, err error) {
 	var configData sql.NullString
 
 	if config != nil {
@@ -54,68 +94,122 @@ func (s *Store) CreateSession(deviceType, deviceID string, config any) (int64, e
 			configData.String = string(config.([]byte))
 
 		default:
-			v, err := json.Marshal(config)
-			if err != nil {
-				return 0, fmt.Errorf("marshaling config: %w", err)
+			var p []byte
+			if p, err = json.Marshal(config); err != nil {
+				err = fmt.Errorf("marshaling config: %w", err)
+				return
 			}
 
 			configData.Valid = true
-			configData.String = string(v)
+			configData.String = string(p)
 		}
 	}
 
-	stmt, err := s.db.Prepare(`INSERT INTO sessions (start_time, device_type, device_id, config_json) VALUES (CURRENT_TIMESTAMP, ?, ?, ?)`)
+	db, err := s.getWriteDB()
 	if err != nil {
-		return 0, fmt.Errorf("preparing statement: %w", err)
+		err = fmt.Errorf("getting write connection: %w", err)
+		return
 	}
-	defer stmt.Close()
+
+	stmt, err := db.Prepare(insertSessionSQL)
+	if err != nil {
+		err = fmt.Errorf("preparing statement: %w", err)
+		return
+	}
+	defer func() {
+		if cErr := stmt.Close(); cErr != nil && err == nil {
+			err = fmt.Errorf("closing statement: %w", cErr)
+		}
+	}()
 
 	result, err := stmt.Exec(deviceType, deviceID, configData)
 	if err != nil {
-		return 0, fmt.Errorf("inserting session: %w", err)
+		err = fmt.Errorf("inserting session: %w", err)
+		return
 	}
 
 	return result.LastInsertId()
 }
 
+const selectSessionSQL = `
+SELECT 
+    id, 
+    start_time, 
+    device_type, 
+    device_id, 
+    config 
+FROM sessions 
+WHERE 
+    id = ?`
+
 // Session returns a session by its ID
-func (s *Store) Session(id int64) (*SessionData, error) {
-	stmt, err := s.db.Prepare(`SELECT id, start_time, device_type, device_id, config FROM sessions WHERE id = ?`)
+func (s *Store) Session(id int64) (session *SessionData, err error) {
+	db, err := s.getReadDB()
 	if err != nil {
-		return nil, fmt.Errorf("preparing statement: %w", err)
-	}
-	defer stmt.Close()
-
-	var session SessionData
-	if err = stmt.QueryRow(id).Scan(&session.ID, &session.StartTime, &session.DeviceType, &session.DeviceID, &session.Config); err != nil {
-		return nil, fmt.Errorf("querying session: %w", err)
+		err = fmt.Errorf("getting read connection: %w", err)
+		return
 	}
 
-	return &session, nil
-}
-
-func (s *Store) Sessions() ([]SessionData, error) {
-	rows, err := s.db.Query(`SELECT id, start_time, device_type, device_id, config FROM sessions`)
+	stmt, err := db.Prepare(selectSessionSQL)
 	if err != nil {
-		return nil, fmt.Errorf("querying sessions: %w", err)
+		err = fmt.Errorf("preparing statement: %w", err)
+		return
 	}
-	defer rows.Close()
-
-	var sessions []SessionData
-	for rows.Next() {
-		var session SessionData
-		if err = rows.Scan(&session.ID, &session.StartTime, &session.DeviceType, &session.DeviceID, &session.Config); err != nil {
-			return nil, fmt.Errorf("scanning session: %w", err)
+	defer func() {
+		if cErr := stmt.Close(); cErr != nil && err == nil {
+			err = fmt.Errorf("closing statement: %w", cErr)
 		}
-		sessions = append(sessions, session)
-	}
+	}()
 
-	return sessions, nil
+	var sess SessionData
+	if err = stmt.QueryRow(id).Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &sess.Config); err != nil {
+		err = fmt.Errorf("scanning session: %w", err)
+		return
+	}
+	return &sess, nil
 }
 
-// InsertTelemetry inserts telemetry data and returns its ID
-func (s *Store) InsertTelemetry(t TelemetryData) (int64, error) {
-	stmt, err := s.db.Prepare(`INSERT INTO telemetry (session_id,
+const selectSessionsSQL = `
+SELECT 
+    id, 
+    start_time, 
+    device_type, 
+    device_id, 
+    config 
+FROM sessions
+`
+
+func (s *Store) Sessions() (sessions []SessionData, err error) {
+	db, err := s.getReadDB()
+	if err != nil {
+		err = fmt.Errorf("getting read connection: %w", err)
+		return
+	}
+
+	rows, err := db.Query(selectSessionsSQL)
+	if err != nil {
+		err = fmt.Errorf("querying sessions: %w", err)
+		return
+	}
+	defer func() {
+		if cErr := rows.Close(); cErr != nil && err == nil {
+			err = fmt.Errorf("closing rows: %w", cErr)
+		}
+	}()
+
+	for rows.Next() {
+		var sess SessionData
+		if err = rows.Scan(&sess.ID, &sess.StartTime, &sess.DeviceType, &sess.DeviceID, &sess.Config); err != nil {
+			err = fmt.Errorf("scanning session: %w", err)
+			return
+		}
+		sessions = append(sessions, sess)
+	}
+	return
+}
+
+const insertTelemetrySQL = `
+INSERT INTO telemetry (session_id,
                        timestamp,
                        latitude,
                        longitude,
@@ -126,11 +220,27 @@ func (s *Store) InsertTelemetry(t TelemetryData) (int64, error) {
                        accel_y,
                        accel_z,
                        radio_rssi)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+// InsertTelemetry inserts telemetry data and returns its ID
+func (s *Store) InsertTelemetry(t TelemetryData) (telemetryID int64, err error) {
+	db, err := s.getWriteDB()
 	if err != nil {
-		return 0, fmt.Errorf("preparing statement: %w", err)
+		err = fmt.Errorf("getting write connection: %w", err)
+		return
 	}
-	defer stmt.Close()
+
+	stmt, err := db.Prepare(insertTelemetrySQL)
+	if err != nil {
+		err = fmt.Errorf("preparing statement: %w", err)
+		return
+	}
+	defer func() {
+		if cErr := stmt.Close(); cErr != nil && err == nil {
+			err = fmt.Errorf("closing statement: %w", cErr)
+		}
+	}()
 
 	result, err := stmt.Exec(
 		t.SessionID,
@@ -149,36 +259,54 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		t.RadioRSSI,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("inserting telemetry: %w", err)
+		err = fmt.Errorf("inserting telemetry: %w", err)
+		return
 	}
 
 	return result.LastInsertId()
 }
 
-// BatchInsertSamples inserts multiple samples in a single transaction
-func (s *Store) BatchInsertSamples(samples []SampleData) error {
-	if len(samples) == 0 {
-		return nil
-	}
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer tx.Rollback()
-
-	stmt, err := tx.Prepare(`INSERT INTO samples (session_id,
+const insertSampleSQL = `
+INSERT INTO samples (session_id,
                      timestamp,
                      frequency,
                      bin_width,
                      power,
                      num_samples,
                      telemetry_id)
-VALUES (?, ?, ?, ?, ?, ?, ?)`)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`
+
+// BatchInsertSamples inserts multiple samples in a single transaction
+func (s *Store) BatchInsertSamples(samples []SampleData) (err error) {
+	if len(samples) == 0 {
+		return
+	}
+
+	db, err := s.getWriteDB()
+	if err != nil {
+		return fmt.Errorf("getting write connection: %w", err)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() {
+		if cErr := tx.Rollback(); cErr != nil && err == nil {
+			err = fmt.Errorf("rolling back transaction: %w", cErr)
+		}
+	}()
+
+	stmt, err := tx.Prepare(insertSampleSQL)
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close()
+	defer func() {
+		if cErr := stmt.Close(); cErr != nil && err == nil {
+			err = fmt.Errorf("closing statement: %w", cErr)
+		}
+	}()
 
 	for _, sample := range samples {
 		_, err = stmt.Exec(
@@ -198,11 +326,33 @@ VALUES (?, ?, ?, ?, ?, ?, ?)`)
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	return nil
+	return
 }
 
-// Internal function to initialize database schema
-func initSchema(db *sql.DB) error {
-	_, err := db.Exec(schemaSQL)
-	return err
+// Close closes the database connection
+func (s *Store) Close() error {
+	s.closeOnce.Do(func() {
+		var writeErr, readErr error
+
+		if s.writeDB != nil {
+			writeErr = s.writeDB.Close()
+			s.writeDB = nil
+		}
+
+		if s.readDB != nil {
+			readErr = s.readDB.Close()
+			s.readDB = nil
+		}
+
+		switch {
+		case writeErr != nil && readErr != nil:
+			s.closeErr = errors.Join(writeErr, readErr)
+		case writeErr != nil:
+			s.closeErr = writeErr
+		case readErr != nil:
+			s.closeErr = readErr
+		}
+	})
+
+	return s.closeErr
 }

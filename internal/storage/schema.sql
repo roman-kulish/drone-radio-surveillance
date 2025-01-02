@@ -8,6 +8,20 @@ CREATE TABLE IF NOT EXISTS sessions (
     UNIQUE(device_id, start_time) -- Prevent duplicate device sessions
 );
 
+-- Core samples table
+CREATE TABLE IF NOT EXISTS samples (
+    id INTEGER PRIMARY KEY,
+    session_id INTEGER NOT NULL,  -- Link back to capturing session
+    timestamp DATETIME NOT NULL,  -- Time of the measurement
+    frequency REAL NOT NULL,      -- Center frequency in Hz
+    bin_width REAL NOT NULL,      -- Frequency bin width in Hz
+    power REAL,                   -- Signal power in dBm
+    num_samples INTEGER NOT NULL, -- Number of samples in bin (NULL for HackRF)
+    telemetry_id INTEGER,         -- Foreign key to telemetry data
+    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
+    FOREIGN KEY(telemetry_id) REFERENCES telemetry(id) ON DELETE SET NULL
+);
+
 -- Telemetry data
 CREATE TABLE IF NOT EXISTS telemetry (
     id INTEGER PRIMARY KEY,
@@ -26,20 +40,6 @@ CREATE TABLE IF NOT EXISTS telemetry (
     ground_course REAL,          -- Ground course in degrees
     radio_rssi INTEGER,          -- Radio link RSSI
     FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
-);
-
--- Core samples table
-CREATE TABLE IF NOT EXISTS samples (
-    id INTEGER PRIMARY KEY,
-    session_id INTEGER NOT NULL,  -- Link back to capturing session
-    timestamp DATETIME NOT NULL,  -- Time of the measurement
-    frequency REAL NOT NULL,      -- Center frequency in Hz
-    bin_width REAL NOT NULL,      -- Frequency bin width in Hz
-    power REAL,                   -- Signal power in dBm
-    num_samples INTEGER NOT NULL, -- Number of samples in bin (NULL for HackRF)
-    telemetry_id INTEGER,         -- Foreign key to telemetry data
-    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE,
-    FOREIGN KEY(telemetry_id) REFERENCES telemetry(id) ON DELETE SET NULL
 );
 
 CREATE VIEW IF NOT EXISTS v_samples_with_telemetry AS
