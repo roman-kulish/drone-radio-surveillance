@@ -106,7 +106,7 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 	startGate := make(chan struct{})
 	samples := make(chan *sdr.SweepResult, len(o.devices))
 
-	go o.handleSweepResults(ctx, samples)
+	go o.handleSweepResults(samples)
 
 	for _, device := range o.devices {
 		o.wg.Add(1)
@@ -140,9 +140,10 @@ func (o *Orchestrator) beginSampling(ctx context.Context, dev *sdr.Device, sampl
 	<-done // Wait for the device sampling goroutine to finish
 }
 
-func (o *Orchestrator) handleSweepResults(ctx context.Context, samples chan *sdr.SweepResult) {
+func (o *Orchestrator) handleSweepResults(samples chan *sdr.SweepResult) {
 	for sample := range samples {
-		if err := o.storeSweepResult(ctx, sample); err != nil {
+		// This function MUST drain the channel and persist all the data.
+		if err := o.storeSweepResult(context.Background(), sample); err != nil {
 			o.logger.Error(err.Error())
 		}
 	}

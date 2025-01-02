@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -148,8 +147,14 @@ func (s *store) getReadDB() (*sql.DB, error) {
 	return s.readDB, s.readDBErr
 }
 
-func closeWithError(closer io.Closer, err *error) {
-	if cErr := closer.Close(); cErr != nil && *err == nil {
+func closeWithError(cl interface{ Close() error }, err *error) {
+	if cErr := cl.Close(); cErr != nil && *err == nil {
+		*err = cErr
+	}
+}
+
+func rollbackWithError(rb interface{ Rollback() error }, err *error) {
+	if cErr := rb.Rollback(); cErr != nil && *err == nil {
 		*err = cErr
 	}
 }
@@ -320,11 +325,7 @@ func (s *store) StoreSweepResult(ctx context.Context, sessionID int64, telemetry
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer func() {
-		if cErr := tx.Rollback(); cErr != nil && err == nil {
-			err = cErr
-		}
-	}()
+	defer rollbackWithError(tx, &err)
 
 	stmt, err := tx.PrepareContext(ctx, insertSampleSQL)
 	if err != nil {
