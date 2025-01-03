@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS telemetry (
 
 CREATE VIEW IF NOT EXISTS v_samples_with_telemetry AS
 SELECT
+    s.session_id,
     s.timestamp,
     s.frequency,
     s.bin_width,

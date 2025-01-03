@@ -53,6 +53,41 @@ type Store interface {
 	//   - error: If retrieval fails or context is cancelled
 	Sessions(ctx context.Context) (sessions []*spectrum.ScanSession, err error)
 
+	// ReadSpectrum creates a new SpectrumReader that provides access to basic spectral measurements
+	// from a scanning session. The reader implements efficient iteration over large datasets through
+	// pagination and supports various filtering and sorting options.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - sessionID: Unique identifier of the scanning session to read from
+	//   - opts: Optional configuration parameters for the reader (WithTimeRange, WithFrequencyRange,
+	//     WithBatchSize, WithSortOrder)
+	//
+	// The returned SpectrumReader must be closed after use to release database resources.
+	// It is safe to call from multiple goroutines, but each reader instance should only be
+	// used from a single goroutine.
+	//
+	// Returns error if reader creation fails or session doesn't exist.
+	ReadSpectrum(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPoint]) (SpectrumReader[spectrum.SpectralPoint], error)
+
+	// ReadSpectrumWithTelemetry creates a new SpectrumReader that provides access to spectral
+	// measurements enriched with drone telemetry data. Each point includes position, orientation,
+	// and radio link quality information captured during the measurement.
+	//
+	// Parameters:
+	//   - ctx: Context for cancellation and timeouts
+	//   - sessionID: Unique identifier of the scanning session to read from
+	//   - opts: Optional configuration parameters for the reader (supports all ReadSpectrum options
+	//     plus WithAltitudeRange, WithPositionBounds, WithMinimumSignalQuality)
+	//
+	// The returned SpectrumReader must be closed after use to release database resources.
+	// Telemetry data is joined with spectral data using nearest-time matching.
+	// It is safe to call from multiple goroutines, but each reader instance should only be
+	// used from a single goroutine.
+	//
+	// Returns error if reader creation fails, session doesn't exist, or telemetry data is unavailable.
+	ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPointWithTelemetry]) (SpectrumReader[spectrum.SpectralPointWithTelemetry], error)
+
 	// StoreTelemetry saves drone telemetry data for a specific session.
 	// The telemetry data is linked to spectrum measurements for position correlation.
 	//
@@ -105,8 +140,8 @@ type store struct {
 }
 
 // New creates a new database connection and initializes the schema
-func New(dbPath string) (Store, error) {
-	return &store{dbPath: dbPath}, nil
+func New(dbPath string) Store {
+	return &store{dbPath: dbPath}
 }
 
 func initSchema(db *sql.DB) error {
@@ -116,7 +151,7 @@ func initSchema(db *sql.DB) error {
 
 func (s *store) getWriteDB() (*sql.DB, error) {
 	s.writeDBOnce.Do(func() {
-		db, err := sql.Open("sqlite3?_journal_mode=WAL&_synchronous=NORMAL", s.dbPath)
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?%s", s.dbPath, "_journal_mode=WAL&_synchronous=NORMAL"))
 		if err != nil {
 			s.writeDBErr = fmt.Errorf("opening write connection: %w", err)
 			return
@@ -124,7 +159,7 @@ func (s *store) getWriteDB() (*sql.DB, error) {
 
 		if err = initSchema(db); err != nil {
 			_ = db.Close()
-			s.writeDBErr = fmt.Errorf("initialising schema: %w", err)
+			s.writeDBErr = fmt.Errorf("initializing schema: %w", err)
 			return
 		}
 
@@ -136,7 +171,7 @@ func (s *store) getWriteDB() (*sql.DB, error) {
 
 func (s *store) getReadDB() (*sql.DB, error) {
 	s.readDBOnce.Do(func() {
-		db, err := sql.Open("sqlite3?mode=ro", s.dbPath)
+		db, err := sql.Open("sqlite3", fmt.Sprintf("file:%s?%s", s.dbPath, "mode=ro"))
 		if err != nil {
 			s.readDBErr = fmt.Errorf("opening read connection: %w", err)
 			return
@@ -268,7 +303,7 @@ func (s *store) ReadSpectrum(ctx context.Context, sessionID int64, opts ...Reade
 	}
 
 	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initialising reader: %w", err)
+		return nil, fmt.Errorf("initializing reader: %w", err)
 	}
 	return &r, nil
 }
@@ -291,7 +326,7 @@ func (s *store) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, 
 	}
 
 	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initialising reader: %w", err)
+		return nil, fmt.Errorf("initializing reader: %w", err)
 	}
 	return &r, nil
 }
