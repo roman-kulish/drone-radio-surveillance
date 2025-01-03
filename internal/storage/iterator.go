@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -17,7 +18,9 @@ import (
 type SpectralData interface {
 	spectrum.SpectralPoint | spectrum.SpectralPointWithTelemetry
 
-	CentralFrequency() float64
+	GetFrequency() float64
+	GetBinWidth() float64
+	GetNumSamples() int
 }
 
 // SpectrumReader provides an iterator-based interface for reading spectrum data
@@ -222,6 +225,15 @@ func (sr *spectrumReader[T]) initQuery(ctx context.Context) (err error) {
 	return nil
 }
 
+func (sr *spectrumReader[T]) convertPoint(point any) (T, error) {
+	result, ok := point.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
+	}
+	return result, nil
+}
+
 func (sr *spectrumReader[T]) scanSample() (time.Time, T, error) {
 	var zero T
 
@@ -245,11 +257,8 @@ func (sr *spectrumReader[T]) scanSample() (time.Time, T, error) {
 		NumSamples: sample.NumSamples,
 	}
 
-	result, ok := any(point).(T)
-	if !ok {
-		return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
-	}
-	return timestamp, result, nil
+	result, err := sr.convertPoint(point)
+	return timestamp, result, err
 }
 
 func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
@@ -296,11 +305,8 @@ func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
 	}
 
 	if !sample.TelemetryID.Valid {
-		result, ok := any(point).(T)
-		if !ok {
-			return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
-		}
-		return timestamp, result, nil
+		result, err := sr.convertPoint(point)
+		return timestamp, result, err
 	}
 
 	point.Telemetry = &telemetry.Telemetry{}
@@ -342,11 +348,48 @@ func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
 		point.Telemetry.RadioRSSI = &sample.RadioRSSI.Int64
 	}
 
-	result, ok := any(point).(T)
-	if !ok {
-		return time.Time{}, zero, fmt.Errorf("invalid type conversion from %T to %T", point, zero)
+	result, err := sr.convertPoint(point)
+	return timestamp, result, err
+}
+
+func (sr *spectrumReader[T]) createZeroPoint(freq float64, template T) T {
+	zeroPower := 0.0
+	point := spectrum.SpectralPoint{
+		Frequency:  freq,
+		Power:      &zeroPower,
+		BinWidth:   template.GetBinWidth(),
+		NumSamples: template.GetNumSamples(),
 	}
-	return timestamp, result, nil
+	return any(point).(T)
+}
+
+// fillFrequencyRange fills a slice with zero power spectral points for the given frequency range.
+// Power readings can be dropped, not properly aligned or first/last data points can be selected
+// in the middle of the spectrum. We can either do (1) some sophisticated queries to try and select
+// complete data, if possible or (2) drop incomplete spans, or (3) fill the gaps with zero power
+// points. The latter is the simplest possible approach.
+func (sr *spectrumReader[T]) fillFrequencyRange(start, end float64, template T) ([]T, error) {
+	binWidth := template.GetBinWidth()
+	if binWidth <= 0 {
+		return nil, fmt.Errorf("invalid bin width: %f", binWidth)
+	}
+
+	numPoints := int(math.Floor((end-start)/binWidth)) + 1 // add extra step
+	if numPoints <= 0 {
+		return nil, nil
+	}
+
+	points := make([]T, numPoints)
+	for i := 0; i < numPoints; i++ {
+		freq := start + float64(i)*binWidth
+		if freq <= end { // make sure there is no overlap
+			points = append(points, sr.createZeroPoint(freq, template))
+			continue
+		}
+		break
+	}
+
+	return points, nil
 }
 
 func (sr *spectrumReader[T]) Session() *spectrum.ScanSession {
@@ -361,10 +404,21 @@ func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
 	if sr.nextSampleExists {
 		sr.currentSpan = &spectrum.SpectralSpan[T]{
 			Timestamp: sr.nextSpanStartTimestamp,
-			StartFreq: sr.nextSample.CentralFrequency(),
+			StartFreq: sr.nextSample.GetFrequency(),
 			Samples:   []T{sr.nextSample},
 		}
 		sr.nextSampleExists = false
+
+		// Detect and fill gaps between the beginning of the spectrum and sr.nextSample.Frequency
+		if freqGreater(sr.nextSample.GetFrequency(), *sr.minFreq, sr.nextSample.GetBinWidth()) {
+			gapPoints, err := sr.fillFrequencyRange(*sr.minFreq, sr.nextSample.GetFrequency(), sr.nextSample)
+			if err != nil {
+				sr.err = fmt.Errorf("filling min frequency gap: %w", err)
+				return false
+			}
+			sr.currentSpan.Samples = append(gapPoints, sr.currentSpan.Samples...)
+			sr.currentSpan.StartFreq = *sr.minFreq
+		}
 	}
 
 	for {
@@ -376,10 +430,19 @@ func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
 		}
 
 		if !sr.rows.Next() {
-			if sr.currentSpan != nil {
-				if len(sr.currentSpan.Samples) > 0 {
-					lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
-					sr.currentSpan.EndFreq = lastSample.CentralFrequency()
+			if sr.currentSpan != nil && len(sr.currentSpan.Samples) > 0 {
+				lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
+				sr.currentSpan.EndFreq = lastSample.GetFrequency()
+
+				// Detect and fill gaps between the last reading and the end of the spectrum
+				if freqLess(lastSample.GetFrequency(), *sr.maxFreq, lastSample.GetBinWidth()) {
+					gapPoints, err := sr.fillFrequencyRange(lastSample.GetFrequency()+lastSample.GetBinWidth(), *sr.maxFreq, lastSample)
+					if err != nil {
+						sr.err = fmt.Errorf("filling max frequency gap: %w", err)
+						return false
+					}
+					sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
+					sr.currentSpan.EndFreq = *sr.maxFreq
 				}
 				return true
 			}
@@ -401,21 +464,54 @@ func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
 		if sr.currentSpan == nil {
 			sr.currentSpan = &spectrum.SpectralSpan[T]{
 				Timestamp: timestamp,
-				StartFreq: sample.CentralFrequency(),
+				StartFreq: sample.GetFrequency(),
 				Samples:   []T{sample},
+			}
+
+			// Detect and fill the gap between the beginning of the spectrum and sr.nextSample.Frequency
+			if freqGreater(sample.GetFrequency(), *sr.minFreq, sample.GetBinWidth()) {
+				gapPoints, err := sr.fillFrequencyRange(*sr.minFreq, sample.GetFrequency(), sample)
+				if err != nil {
+					sr.err = fmt.Errorf("filling min frequency gap: %w", err)
+					return false
+				}
+				sr.currentSpan.Samples = append(gapPoints, sr.currentSpan.Samples...)
+				sr.currentSpan.StartFreq = *sr.minFreq
 			}
 			continue
 		}
 
 		// Check for frequency rollover only
 		lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
-		if sample.CentralFrequency() < lastSample.CentralFrequency() {
+		if sample.GetFrequency() < lastSample.GetFrequency() {
 			// Frequency rolled over - complete current span
-			sr.currentSpan.EndFreq = lastSample.CentralFrequency()
+			sr.currentSpan.EndFreq = lastSample.GetFrequency()
+
+			// Detect and fill the gap between the last reading and the end of the spectrum
+			if freqLess(lastSample.GetFrequency(), *sr.maxFreq, lastSample.GetBinWidth()) {
+				gapPoints, err := sr.fillFrequencyRange(lastSample.GetFrequency()+lastSample.GetBinWidth(), *sr.maxFreq, lastSample)
+				if err != nil {
+					sr.err = fmt.Errorf("filling max frequency gap: %w", err)
+					return false
+				}
+				sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
+				sr.currentSpan.EndFreq = *sr.maxFreq
+			}
+
 			sr.nextSample = sample
 			sr.nextSampleExists = true
 			sr.nextSpanStartTimestamp = timestamp
 			return true
+		}
+
+		// Detect and fill the gap between two data points
+		if freqLess(lastSample.GetFrequency()+lastSample.GetBinWidth(), sample.GetFrequency(), lastSample.GetBinWidth()) {
+			gapPoints, err := sr.fillFrequencyRange(lastSample.GetFrequency()+lastSample.GetBinWidth(), sample.GetFrequency(), lastSample)
+			if err != nil {
+				sr.err = fmt.Errorf("filling frequency gap between data points: %w", err)
+				return false
+			}
+			sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
 		}
 
 		// Add sample to current span
@@ -440,6 +536,8 @@ func (sr *spectrumReader[T]) Error() error {
 func (sr *spectrumReader[T]) Close() error {
 	if sr.rows != nil {
 		err := sr.rows.Close()
+		sr.currentSpan = nil
+		sr.nextSampleExists = false
 		sr.rows = nil
 		return err
 	}

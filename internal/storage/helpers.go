@@ -2,10 +2,23 @@ package storage
 
 import (
 	"database/sql"
+	"math"
 
 	"github.com/roman-kulish/radio-surveillance/internal/sdr"
 	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
+
+func closeWithError(cl interface{ Close() error }, err *error) {
+	if cErr := cl.Close(); cErr != nil && *err == nil {
+		*err = cErr
+	}
+}
+
+func rollbackWithError(rb interface{ Rollback() error }, err *error) {
+	if cErr := rb.Rollback(); cErr != nil && *err == nil {
+		*err = cErr
+	}
+}
 
 func toTelemetryData(sessionID int64, t *telemetry.Telemetry) *telemetryData {
 	return &telemetryData{
@@ -48,13 +61,13 @@ func toTelemetryData(sessionID int64, t *telemetry.Telemetry) *telemetryData {
 			Float64: toSQLNullType[float64](t.AccelZ),
 			Valid:   t.AccelZ != nil,
 		},
-		GroundSpeed: sql.NullInt64{
-			Int64: toSQLNullType[int64](t.GroundSpeed),
-			Valid: t.GroundSpeed != nil,
+		GroundSpeed: sql.NullFloat64{
+			Float64: toSQLNullType[float64](t.GroundSpeed),
+			Valid:   t.GroundSpeed != nil,
 		},
-		GroundCourse: sql.NullInt64{
-			Int64: toSQLNullType[int64](t.GroundCourse),
-			Valid: t.GroundCourse != nil,
+		GroundCourse: sql.NullFloat64{
+			Float64: toSQLNullType[float64](t.GroundCourse),
+			Valid:   t.GroundCourse != nil,
 		},
 		RadioRSSI: sql.NullInt64{
 			Int64: toSQLNullType[int64](t.RadioRSSI),
@@ -94,14 +107,37 @@ func toSQLNullType[T float64 | int64, Y float64 | int | int64](f *Y) T {
 	return T(*f)
 }
 
-func closeWithError(cl interface{ Close() error }, err *error) {
-	if cErr := cl.Close(); cErr != nil && *err == nil {
-		*err = cErr
+// freqCompare helps compare frequencies using bin width-based tolerance.
+// Returns:
+//
+//	-1 if a < b
+//	 0 if a ≈ b (within tolerance)
+//	+1 if a > b
+func freqCompare(a, b, binWidth float64) int {
+	// Use small fraction of bin width as tolerance
+	tolerance := binWidth * 0.01 // 1% of bin width
+
+	diff := a - b
+	if math.Abs(diff) <= tolerance {
+		return 0
 	}
+	if diff < 0 {
+		return -1
+	}
+	return 1
 }
 
-func rollbackWithError(rb interface{ Rollback() error }, err *error) {
-	if cErr := rb.Rollback(); cErr != nil && *err == nil {
-		*err = cErr
-	}
+// freqLess returns true if a is less than b with bin width-based tolerance
+func freqLess(a, b, binWidth float64) bool {
+	return freqCompare(a, b, binWidth) < 0
+}
+
+// freqEqual returns true if a equals b within bin width-based tolerance
+func freqEqual(a, b, binWidth float64) bool {
+	return freqCompare(a, b, binWidth) == 0
+}
+
+// freqGreater returns true if a is greater than b with bin width-based tolerance
+func freqGreater(a, b, binWidth float64) bool {
+	return freqCompare(a, b, binWidth) > 0
 }

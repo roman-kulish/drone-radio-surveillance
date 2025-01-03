@@ -25,8 +25,16 @@ type SpectralPoint struct {
 	NumSamples int      // Number of samples used for this measurement
 }
 
-func (p SpectralPoint) CentralFrequency() float64 {
+func (p SpectralPoint) GetFrequency() float64 {
 	return p.Frequency
+}
+
+func (p SpectralPoint) GetBinWidth() float64 {
+	return p.BinWidth
+}
+
+func (p SpectralPoint) GetNumSamples() int {
+	return p.NumSamples
 }
 
 // SpectralPointWithTelemetry extends SpectralPoint with drone telemetry data,
