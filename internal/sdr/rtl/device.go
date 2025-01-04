@@ -46,7 +46,7 @@ func (h handler) Cmd(ctx context.Context) *exec.Cmd {
 func (h handler) Parse(line string, deviceID string) (*sdr.SweepResult, error) {
 	fields := strings.Split(line, ",")
 	if len(fields) < 7 {
-		return nil, fmt.Errorf("invalid rtl_power output: not enough fields")
+		return nil, fmt.Errorf("invalid %s output: not enough fields", Device)
 	}
 
 	var err error

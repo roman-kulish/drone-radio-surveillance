@@ -78,7 +78,7 @@ func (o *Orchestrator) CreateDevice(config *DeviceConfig) error {
 		return fmt.Errorf("creating Device: unknown type '%s'", config.Type)
 	}
 
-	opts := []func(*sdr.Device){
+	opts := []sdr.DeviceOption{
 		sdr.WithLogger(o.logger),
 	}
 
