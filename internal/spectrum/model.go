@@ -9,20 +9,20 @@ import (
 // ScanSession represents a single spectrum scanning session with a specific device.
 // Each session captures metadata about when and how the scanning was performed.
 type ScanSession struct {
-	ID         int64     // Unique identifier for the session
-	StartTime  time.Time // When the scanning session began
-	DeviceType string    // Type of SDR device used (e.g., "rtl-sdr", "hackrf")
-	DeviceID   string    // Unique identifier of the specific device (e.g., serial number)
-	Config     *string   // Optional device configuration in JSON format
+	ID         int64     `json:"ID"`                      // Unique identifier for the session
+	StartTime  time.Time `json:"startTime"`               // When the scanning session began
+	DeviceType string    `json:"deviceType"`              // Type of SDR device used (e.g., "rtl-sdr", "hackrf")
+	DeviceID   string    `json:"deviceID"`                // Unique identifier of the specific device (e.g., serial number)
+	Config     *string   `json:"config,string,omitempty"` // Optional device configuration in JSON format
 }
 
 // SpectralPoint represents a single measurement at a specific frequency.
 // It captures the power level and measurement parameters for that frequency point.
 type SpectralPoint struct {
-	Frequency  float64  // Center frequency in Hz
-	Power      *float64 // Measured power level in dBm (nil if measurement invalid)
-	BinWidth   float64  // Frequency bin width in Hz
-	NumSamples int      // Number of samples used for this measurement
+	Frequency  float64  `json:"frequency"`       // Center frequency in Hz
+	Power      *float64 `json:"power,omitempty"` // Measured power level in dBm (nil if measurement invalid)
+	BinWidth   float64  `json:"binWidth"`        // Frequency bin width in Hz
+	NumSamples int      `json:"numSamples"`      // Number of samples used for this measurement
 }
 
 func (p SpectralPoint) GetFrequency() float64 {
@@ -40,16 +40,16 @@ func (p SpectralPoint) GetNumSamples() int {
 // SpectralPointWithTelemetry extends SpectralPoint with drone telemetry data,
 // associating spectrum measurements with the drone's state and position.
 type SpectralPointWithTelemetry struct {
-	SpectralPoint
-	Telemetry *telemetry.Telemetry // Drone telemetry data, if exists
+	SpectralPoint `json:"spectralPoint"`
+	Telemetry     *telemetry.Telemetry `json:"telemetry,omitempty"` // Drone telemetry data, if exists
 }
 
 // SpectralSpan represents a complete spectrum measurement at a point in time.
 // It contains a sequence of measurements across a frequency range, optionally
 // including telemetry data for each point.
 type SpectralSpan[T SpectralPoint | SpectralPointWithTelemetry] struct {
-	Timestamp time.Time // When this span of measurements was taken
-	StartFreq float64   // Start frequency of the span in Hz
-	EndFreq   float64   // End frequency of the span in Hz
-	Samples   []T       // Ordered sequence of measurements in this span
+	Timestamp time.Time `json:"timestamp"`         // When this span of measurements was taken
+	StartFreq float64   `json:"startFreq"`         // Start frequency of the span in Hz
+	EndFreq   float64   `json:"endFreq"`           // End frequency of the span in Hz
+	Samples   []T       `json:"samples,omitempty"` // Ordered sequence of measurements in this span
 }
