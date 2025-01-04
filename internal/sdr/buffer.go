@@ -19,9 +19,10 @@ const minSpectrumChunksThreshold = 5
 // in order based on their frequency ranges and timestamps, automatically handling
 // cases where sweep chunks arrive out of order or span across frequency rollover points.
 type SweepsBuffer struct {
-	baseFreq float64 // Minimum frequency in Hz for the sweep range
-	maxFreq  float64 // Maximum frequency in Hz for the sweep range
-	binWidth float64 // Bin width observed from the sweep results
+	baseFreq          float64 // Minimum frequency in Hz for the sweep range
+	maxFreq           float64 // Maximum frequency in Hz for the sweep range
+	binWidth          float64 // Bin width observed from the sweep results
+	rolloverThreshold int     // Threshold for frequency rollover detection
 
 	capacity   int // Maximum number of sweeps to store
 	flushCount int // Number of sweeps to remove when buffer reaches capacity
@@ -202,12 +203,10 @@ func (sb *SweepsBuffer) compareSweepOrder(a, b *SweepResult) int {
 	ac := sb.getSweepOrder(a)
 	bc := sb.getSweepOrder(b)
 
-	rolloverThreshold := int((sb.maxFreq - sb.baseFreq) / sb.binWidth / 2)
-
 	var ar, br bool
 	if int((sb.maxFreq-sb.baseFreq)/sb.binWidth) > minSpectrumChunksThreshold {
-		ar = ac < rolloverThreshold
-		br = bc < rolloverThreshold
+		ar = ac < sb.rolloverThreshold
+		br = bc < sb.rolloverThreshold
 	}
 
 	switch {
@@ -250,4 +249,5 @@ func (sb *SweepsBuffer) updateFrequencyRange(s *SweepResult) {
 	}
 
 	sb.binWidth = s.BinWidth
+	sb.rolloverThreshold = int((sb.maxFreq - sb.baseFreq) / sb.binWidth / 2)
 }
