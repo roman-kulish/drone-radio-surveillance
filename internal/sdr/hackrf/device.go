@@ -63,12 +63,15 @@ func (h handler) Parse(line string, deviceID string, sr chan<- *sdr.SweepResult)
 		return fmt.Errorf("invalid timestamp: %w", err)
 	}
 
-	// Parse low frequency, bin information and number of samples
-	// Note that the high frequency is not used, because the low frequency and
-	// bin width are used to calculate the center frequency of each bin.
-	freqLow, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+	// Parse low / high frequencies, bin information and number of samples
+	result.StartFrequency, err = strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
 	if err != nil {
-		return fmt.Errorf("invalis start frequency: %w", err)
+		return fmt.Errorf("invalid start frequency: %w", err)
+	}
+
+	result.EndFrequency, err = strconv.ParseFloat(strings.TrimSpace(fields[3]), 64)
+	if err != nil {
+		return fmt.Errorf("invalid end frequency: %w", err)
 	}
 
 	result.BinWidth, err = strconv.ParseFloat(strings.TrimSpace(fields[4]), 64)
@@ -84,7 +87,7 @@ func (h handler) Parse(line string, deviceID string, sr chan<- *sdr.SweepResult)
 	// Parse average power values
 	for i, field := range fields[6:] {
 		reading := sdr.PowerReading{
-			Frequency: freqLow + (float64(i) * result.BinWidth) + (result.BinWidth / 2),
+			Frequency: result.StartFrequency + (float64(i) * result.BinWidth) + (result.BinWidth / 2),
 		}
 
 		if power, err := strconv.ParseFloat(strings.TrimSpace(field), 64); err == nil {
