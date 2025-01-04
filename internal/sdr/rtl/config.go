@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -166,36 +165,36 @@ type Config struct {
 	BinWidth       int64 `yaml:"binWidth" json:"binWidth"`             // -f bin_size Bin size in Hz (valid range 1Hz - 2.8MHz)
 
 	// Common Optional Parameters
-	Interval TimeDuration `yaml:"interval" json:"interval"` // -i integration_interval (default: 10 seconds)
+	Interval TimeDuration `yaml:"interval" json:"interval,omitempty"` // -i integration_interval (default: 10 seconds)
 	// Time units: 's' seconds, 'm' minutes, 'h' hours
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
 
-	DeviceIndex int `yaml:"deviceIndex" json:"deviceIndex"` // -d device_index (default: 0)
+	DeviceIndex int `yaml:"deviceIndex" json:"deviceIndex,omitempty"` // -d device_index (default: 0)
 
-	Gain     int `yaml:"gain" json:"gain"`         // -g tuner_gain (default: automatic)
-	PPMError int `yaml:"ppmError" json:"ppmError"` // -p ppm_error (default: 0)
+	Gain     int `yaml:"gain" json:"gain,omitempty"`         // -g tuner_gain (default: automatic)
+	PPMError int `yaml:"ppmError" json:"ppmError,omitempty"` // -p ppm_error (default: 0)
 
 	// Time Control
-	ExitTimer TimeDuration `yaml:"exitTimer" json:"exitTimer"` // -e exit_timer (default: off/0)
+	ExitTimer TimeDuration `yaml:"exitTimer" json:"exitTimer,omitempty"` // -e exit_timer (default: off/0)
 	// Time units: 's' seconds, 'm' minutes, 'h' hours
 	// Default unit is seconds
 	// Examples: "30s", "15m", "2h"
 
 	// Processing Options
-	Smoothing  SmoothingMethod `yaml:"smoothing" json:"smoothing"`   // -s [avg|iir] Smoothing (default: avg)
-	FFTThreads int             `yaml:"fftThreads" json:"fftThreads"` // -t threads Number of FFT threads
+	Smoothing  SmoothingMethod `yaml:"smoothing" json:"smoothing,omitempty"`   // -s [avg|iir] Smoothing (default: avg)
+	FFTThreads int             `yaml:"fftThreads" json:"fftThreads,omitempty"` // -t threads Number of FFT threads
 
 	// Advanced/Experimental Options
-	WindowFunction WindowFunction `yaml:"windowFunction" json:"windowFunction"` // -w window (default: rectangle)
-	Crop           float32        `yaml:"crop" json:"crop"`                     // -c crop_percent (default: 0%, recommended: 20%-50%)
-	FIRSize        *int           `yaml:"firSize" json:"firSize"`               // -F fir_size (default: disabled, can be 0 or 9)
+	WindowFunction WindowFunction `yaml:"windowFunction" json:"windowFunction,omitempty"` // -w window (default: rectangle)
+	Crop           float32        `yaml:"crop" json:"crop,omitempty"`                     // -c crop_percent (default: 0%, recommended: 20%-50%)
+	FIRSize        *int           `yaml:"firSize" json:"firSize,omitempty"`               // -F fir_size (default: disabled, can be 0 or 9)
 
 	// Hardware Options
-	PeakHold       bool `yaml:"peakHold" json:"peakHold"`             // -P enables peak hold (default: off)
-	DirectSampling bool `yaml:"directSampling" json:"directSampling"` // -D enable direct sampling (default: off)
-	OffsetTuning   bool `yaml:"offsetTuning" json:"offsetTuning"`     // -O enable offset tuning (default: off)
-	BiasTee        bool `yaml:"biasTee" json:"biasTee"`               // -T enable bias-tee (default: off)
+	PeakHold       bool `yaml:"peakHold" json:"peakHold,omitempty"`             // -P enables peak hold (default: off)
+	DirectSampling bool `yaml:"directSampling" json:"directSampling,omitempty"` // -D enable direct sampling (default: off)
+	OffsetTuning   bool `yaml:"offsetTuning" json:"offsetTuning,omitempty"`     // -O enable offset tuning (default: off)
+	BiasTee        bool `yaml:"biasTee" json:"biasTee,omitempty"`               // -T enable bias-tee (default: off)
 }
 
 func (c *Config) Validate() error {
@@ -330,12 +329,4 @@ func (c *Config) Args() ([]string, error) {
 	args = append(args, "-") // Always dump to stdout
 
 	return args, nil
-}
-
-func (c *Config) String() string {
-	args, err := c.Args()
-	if err != nil {
-		return fmt.Sprintf("rtl.Config: failed to build args: %s", err)
-	}
-	return fmt.Sprintf("%s %s", Runtime, strings.Join(args, " "))
 }

@@ -4,15 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 )
 
 const (
-	MinNumSamples = 8192
-	MaxLNAGain    = 40
-	MaxVGAGain    = 62
-	LNAGainStep   = 8
-	VGAGainStep   = 2
+	MaxLNAGain  = 40
+	MaxVGAGain  = 62
+	LNAGainStep = 8
+	VGAGainStep = 2
 )
 
 // Usage examples from man page:
@@ -37,14 +35,14 @@ type Config struct {
 	FrequencyEnd   int64 `yaml:"frequencyEnd" json:"frequencyEnd"`     // -f freq_max Frequency range end in MHz
 
 	// Important but Optional (have reasonable defaults)
-	LNAGain  *int  `yaml:"lnaGain" json:"lnaGain"`   // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
-	VGAGain  *int  `yaml:"vgaGain" json:"vgaGain"`   // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
-	BinWidth int64 `yaml:"binWidth" json:"binWidth"` // -w bin_width FFT bin width (frequency resolution) in Hz
+	LNAGain  *int  `yaml:"lnaGain" json:"lnaGain,omitempty"`   // -l gain_db LNA (IF) gain, 0-40dB, 8dB steps
+	VGAGain  *int  `yaml:"vgaGain" json:"vgaGain,omitempty"`   // -g gain_db VGA (baseband) gain, 0-62dB, 2dB steps
+	BinWidth int64 `yaml:"binWidth" json:"binWidth,omitempty"` // -w bin_width FFT bin width (frequency resolution) in Hz
 
 	// Optional - Advanced Configuration
-	SerialNumber string `yaml:"serialNumber" json:"serialNumber"` // -d serial_number Serial number of desired HackRF
-	EnableAmp    bool   `yaml:"enableAmp" json:"enableAmp"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
-	AntennaPower bool   `yaml:"antennaPower" json:"antennaPower"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
+	SerialNumber string `yaml:"serialNumber" json:"serialNumber,omitempty"` // -d serial_number Serial number of desired HackRF
+	EnableAmp    bool   `yaml:"enableAmp" json:"enableAmp,omitempty"`       // -a amp_enable RX RF amplifier 1=Enable, 0=Disable
+	AntennaPower bool   `yaml:"antennaPower" json:"antennaPower,omitempty"` // -p antenna_enable Antenna port power, 1=Enable, 0=Disable
 }
 
 func (c *Config) Validate() error {
@@ -115,12 +113,4 @@ func (c *Config) Args() ([]string, error) {
 	}
 
 	return args, nil
-}
-
-func (c *Config) String() string {
-	args, err := c.Args()
-	if err != nil {
-		return fmt.Sprintf("hackrf.Config: failed to build args: %s", err)
-	}
-	return fmt.Sprintf("%s %s", Runtime, strings.Join(args, " "))
 }
