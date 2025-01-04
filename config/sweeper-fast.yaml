@@ -19,8 +19,10 @@ rtlConfig: &rtlConfig
 # Total sweep time: ~1-2 seconds
 # Best for: High-speed drone flights, initial surveys
 hackRFConfig: &hackRFConfig
-  frequencyStart: 1000000      # 1 MHz
-  frequencyEnd: 6000000000     # 6 Ghz
+#  frequencyStart: 1000000      # 1 MHz
+#  frequencyEnd: 6000000000     # 6 Ghz
+  frequencyStart: 24000000     # 24 MHz
+  frequencyEnd: 1766000000     # 1766 MHz
   binWidth: 200000             # 200 kHz steps (increased due to HackRF's wider bandwidth)
   lnaGain: 24                  # High LNA gain (0-40 dB)
   vgaGain: 36                  # High VGA gain (0-62 dB)
@@ -38,14 +40,19 @@ devices:
   # RTL-SDR device example
   - name: "Main Scanner"             # Human readable identifier
     type: "rtl-sdr"                  # Device type (rtl-sdr or hackrf)
-    enabled: true                    # Whether this device should be used
+    enabled: false                   # Whether this device should be used
     config: *rtlConfig               # Device configuration
-
+    buffer:
+      capacity: 10                     # Maximum number of sweep sessions to buffer
+      flushCount: 3                    # Number of sweep sessions to flush to the storage at once
   # HackRF device example
   - name: "Wide Scanner"             # Human readable identifier
     type: "hackrf"                   # Device type
     enabled: true                    # Whether this device should be used
     config: *hackRFConfig            # Device configuration
+    buffer:
+      capacity: 10                   # Maximum number of sweep sessions to buffer
+      flushCount: 3                  # Number of sweep sessions to flush to the storage at once
 
 # Telemetry configuration
 telemetry:
@@ -63,4 +70,3 @@ telemetry:
 # Storage configuration
 storage:
   dataDirectory: "data"              # Directory for storing session databases
-  maxBatchSize: 100                  # Maximum samples per batch insert

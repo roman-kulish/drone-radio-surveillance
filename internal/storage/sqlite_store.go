@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/roman-kulish/radio-surveillance/internal/sdr"
@@ -35,8 +36,8 @@ func NewSqliteStore(dbPath string) *SqliteStore {
 	return &SqliteStore{dbPath: dbPath}
 }
 
-func initSchema(db *sql.DB) error {
-	_, err := db.Exec(schemaSQL)
+func runSQLCommand(db *sql.DB, sql string) error {
+	_, err := db.Exec(sql)
 	return err
 }
 
@@ -48,7 +49,7 @@ func (s *SqliteStore) getWriteDB() (*sql.DB, error) {
 			return
 		}
 
-		if err = initSchema(db); err != nil {
+		if err = runSQLCommand(db, initSchemaSQL); err != nil {
 			_ = db.Close()
 			s.writeDBErr = fmt.Errorf("initializing schema: %w", err)
 			return
@@ -180,8 +181,21 @@ func (s *SqliteStore) Sessions(ctx context.Context) (sessions []*spectrum.ScanSe
 	return
 }
 
-// ReadSpectrum creates a new SpectrumReader with the given options.
-// This reader returns basic spectral points.
+// ReadSpectrum creates a new SpectrumReader that provides access to basic spectral measurements
+// from a scanning session. The reader implements efficient iteration over large datasets through
+// pagination and supports various filtering and sorting options.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - sessionID: Unique identifier of the scanning session to read from
+//   - opts: Optional configuration parameters for the reader (WithTimeRange, WithFrequencyRange,
+//     WithBatchSize, WithSortOrder)
+//
+// The returned SpectrumReader must be closed after use to release database resources.
+// It is safe to call from multiple goroutines, but each reader instance should only be
+// used from a single goroutine.
+//
+// Returns error if reader creation fails or session doesn't exist.
 func (s *SqliteStore) ReadSpectrum(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPoint]) (*SqliteSpectrumReader[spectrum.SpectralPoint], error) {
 	db, err := s.getReadDB()
 	if err != nil {
@@ -190,8 +204,22 @@ func (s *SqliteStore) ReadSpectrum(ctx context.Context, sessionID int64, opts ..
 	return newSqliteSpectrumReader[spectrum.SpectralPoint](db, sessionID, false, opts...)
 }
 
-// ReadSpectrumWithTelemetry creates a new SpectrumReader with the given options.
-// This reader returns spectral points enriched with telemetry data.
+// ReadSpectrumWithTelemetry creates a new SpectrumReader that provides access to spectral
+// measurements enriched with drone telemetry data. Each point includes position, orientation,
+// and radio link quality information captured during the measurement.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - sessionID: Unique identifier of the scanning session to read from
+//   - opts: Optional configuration parameters for the reader (supports all ReadSpectrum options
+//     plus WithAltitudeRange, WithPositionBounds, WithMinimumSignalQuality)
+//
+// The returned SpectrumReader must be closed after use to release database resources.
+// Telemetry data is joined with spectral data using nearest-time matching.
+// It is safe to call from multiple goroutines, but each reader instance should only be
+// used from a single goroutine.
+//
+// Returns error if reader creation fails, session doesn't exist, or telemetry data is unavailable.
 func (s *SqliteStore) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPointWithTelemetry]) (*SqliteSpectrumReader[spectrum.SpectralPointWithTelemetry], error) {
 	db, err := s.getReadDB()
 	if err != nil {
@@ -245,6 +273,18 @@ func (s *SqliteStore) StoreTelemetry(ctx context.Context, sessionID int64, t *te
 	return
 }
 
+const insertSampleSQL = `
+    INSERT INTO samples (
+        session_id,
+        timestamp,
+        frequency,
+        bin_width,
+        power,
+        num_samples,
+        telemetry_id
+    )
+    VALUES `
+
 func (s *SqliteStore) StoreSweepResult(ctx context.Context, sessionID int64, telemetryID *int64, result *sdr.SweepResult) (err error) {
 	if len(result.Readings) == 0 {
 		return
@@ -261,17 +301,19 @@ func (s *SqliteStore) StoreSweepResult(ctx context.Context, sessionID int64, tel
 	}
 	defer rollbackWithError(tx, &err)
 
-	stmt, err := tx.PrepareContext(ctx, insertSampleSQL)
-	if err != nil {
-		return fmt.Errorf("preparing statement: %w", err)
-	}
-	defer closeWithError(stmt, &err)
+	// Prepare values array
+	values := make([]interface{}, 0, len(result.Readings)*7)
 
-	for _, sample := range result.Readings {
+	// Build batch insert query
+	valuesPlaceholder := "(?, ?, ?, ?, ?, ?, ?)"
+
+	var sb strings.Builder
+
+	sb.WriteString(insertSampleSQL)
+
+	for i, sample := range result.Readings {
 		data := toSampleData(sessionID, telemetryID, sample, result)
-
-		_, err = stmt.ExecContext(
-			ctx,
+		values = append(values,
 			data.SessionID,
 			data.Timestamp,
 			data.Frequency,
@@ -280,15 +322,23 @@ func (s *SqliteStore) StoreSweepResult(ctx context.Context, sessionID int64, tel
 			data.NumSamples,
 			data.TelemetryID,
 		)
-		if err != nil {
-			return fmt.Errorf("inserting sample: %w", err)
+
+		if i > 0 {
+			sb.WriteString(", ")
 		}
+		sb.WriteString(valuesPlaceholder)
 	}
+
+	// Single batch insert
+	if _, err = tx.ExecContext(ctx, sb.String(), values...); err != nil {
+		return fmt.Errorf("batch inserting samples: %w", err)
+	}
+
 	if err = tx.Commit(); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
 	}
 
-	return
+	return nil
 }
 
 func (s *SqliteStore) Close() error {
@@ -296,6 +346,8 @@ func (s *SqliteStore) Close() error {
 		var writeErr, readErr error
 
 		if s.writeDB != nil {
+			_ = runSQLCommand(s.writeDB, initIndexesSQL)
+
 			writeErr = s.writeDB.Close()
 			s.writeDB = nil
 		}
