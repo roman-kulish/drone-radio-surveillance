@@ -2,7 +2,10 @@ package storage
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"math"
+	"time"
 
 	"github.com/roman-kulish/radio-surveillance/internal/sdr"
 	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
@@ -15,7 +18,7 @@ func closeWithError(cl interface{ Close() error }, err *error) {
 }
 
 func rollbackWithError(rb interface{ Rollback() error }, err *error) {
-	if cErr := rb.Rollback(); cErr != nil && *err == nil {
+	if cErr := rb.Rollback(); cErr != nil && !errors.Is(cErr, sql.ErrTxDone) && *err == nil {
 		*err = cErr
 	}
 }
@@ -140,4 +143,38 @@ func freqEqual(a, b, binWidth float64) bool {
 // freqGreater returns true if a is greater than b with bin width-based tolerance
 func freqGreater(a, b, binWidth float64) bool {
 	return freqCompare(a, b, binWidth) > 0
+}
+
+var timestampFormats = []string{
+	// By default, store timestamps with whatever timezone they come with.
+	// When parsed, they will be returned with the same timezone.
+	"2006-01-02 15:04:05.999999999-07:00",
+	"2006-01-02T15:04:05.999999999-07:00",
+	"2006-01-02 15:04:05.999999999",
+	"2006-01-02T15:04:05.999999999",
+	"2006-01-02 15:04:05",
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04",
+	"2006-01-02T15:04",
+	"2006-01-02",
+}
+
+type buggySqliteDatetime struct {
+	Datetime time.Time
+}
+
+func (b *buggySqliteDatetime) Scan(src any) (err error) {
+	s, ok := src.(string)
+	if !ok {
+		err = fmt.Errorf("invalid type for buggySqliteDatetime: %T", src)
+		return
+	}
+
+	for _, f := range timestampFormats {
+		b.Datetime, err = time.ParseInLocation(f, s, time.UTC)
+		if err == nil {
+			return nil
+		}
+	}
+	return
 }

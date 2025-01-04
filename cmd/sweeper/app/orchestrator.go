@@ -137,7 +137,11 @@ func (o *Orchestrator) beginSampling(ctx context.Context, dev *sdr.Device, sampl
 		return
 	}
 
-	<-done // Wait for the device sampling goroutine to finish
+	// Wait for the device sampling goroutine to finish
+	if err = <-done; err != nil {
+		o.logger.Error(err.Error())
+		o.cancel() // signal to other goroutines about fatal
+	}
 }
 
 func (o *Orchestrator) handleSweepResults(samples chan *sdr.SweepResult) {

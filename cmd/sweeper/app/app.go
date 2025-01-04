@@ -60,10 +60,5 @@ func createStorage(config *StorageConfig) (storage.Store, error) {
 	}
 
 	dbPath = filepath.Join(dbPath, fmt.Sprintf("sdr_session_%s.sqlite", time.Now().UTC().Format("20060102_150405")))
-	store, err := storage.New(dbPath)
-	if err != nil {
-		return nil, fmt.Errorf("creating storage: %w", err)
-	}
-
-	return store, nil
+	return storage.New(dbPath), nil
 }

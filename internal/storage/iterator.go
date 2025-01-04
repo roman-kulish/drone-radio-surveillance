@@ -13,6 +13,10 @@ import (
 	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
+// ErrNoData indicates either that no spectrum data exists for the given parameters,
+// or that all available data has been read from the spectrum reader.
+var ErrNoData = fmt.Errorf("no data available")
+
 // SpectralData is a constraint for types that can represent spectrum measurements,
 // either basic spectral points or those enriched with telemetry data.
 type SpectralData interface {
@@ -133,9 +137,18 @@ func (sr *spectrumReader[T]) init(ctx context.Context) error {
 	if sr.sessionID <= 0 {
 		return errors.New("session ID required")
 	}
-	for _, fn := range []func(context.Context) error{sr.loadSession, sr.initFilters, sr.initQuery} {
-		if err := fn(ctx); err != nil {
-			return fmt.Errorf("initializing reader: %w", err)
+
+	steps := []struct {
+		msg string
+		fn  func(context.Context) error
+	}{
+		{msg: "loading session", fn: sr.loadSession},
+		{msg: "initializing filters", fn: sr.initFilters},
+		{msg: "initializing query", fn: sr.initQuery},
+	}
+	for _, s := range steps {
+		if err := s.fn(ctx); err != nil {
+			return fmt.Errorf("%s: %w", s.msg, err)
 		}
 	}
 	return nil
@@ -186,9 +199,9 @@ func (sr *spectrumReader[T]) initFilters(ctx context.Context) (err error) {
 	defer closeWithError(stmt, &err)
 
 	var minFreq, maxFreq float64
-	var startTime, endTime time.Time
+	var startTime, endTime buggySqliteDatetime
 	if err = stmt.QueryRowContext(ctx, sr.sessionID).Scan(&minFreq, &maxFreq, &startTime, &endTime); err != nil {
-		return fmt.Errorf("scanning session: %w", err)
+		return fmt.Errorf("scanning filters data: %w", err)
 	}
 
 	if sr.minFreq == nil {
@@ -198,10 +211,10 @@ func (sr *spectrumReader[T]) initFilters(ctx context.Context) (err error) {
 		sr.maxFreq = &maxFreq
 	}
 	if sr.startTime == nil {
-		sr.startTime = &startTime
+		sr.startTime = &startTime.Datetime
 	}
 	if sr.endTime == nil {
-		sr.endTime = &endTime
+		sr.endTime = &endTime.Datetime
 	}
 
 	return nil
@@ -388,7 +401,6 @@ func (sr *spectrumReader[T]) fillFrequencyRange(start, end float64, template T) 
 		}
 		break
 	}
-
 	return points, nil
 }
 
@@ -444,6 +456,8 @@ func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
 					sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
 					sr.currentSpan.EndFreq = *sr.maxFreq
 				}
+
+				sr.err = ErrNoData
 				return true
 			}
 			return false
@@ -524,7 +538,7 @@ func (sr *spectrumReader[T]) Current() *spectrum.SpectralSpan[T] {
 }
 
 func (sr *spectrumReader[T]) Error() error {
-	if sr.err != nil {
+	if sr.err != nil && !errors.Is(sr.err, ErrNoData) {
 		return sr.err
 	}
 	if sr.rows != nil {

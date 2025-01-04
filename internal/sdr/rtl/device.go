@@ -37,12 +37,10 @@ func New(config *Config) (sdr.Handler, error) {
 	return &handler{binPath, args}, nil
 }
 
-// Cmd returns an exec.Cmd for the RTL-SDR handler
 func (h handler) Cmd(ctx context.Context) *exec.Cmd {
 	return exec.CommandContext(ctx, h.binPath, h.args...)
 }
 
-// Parse parses a line of RTL-SDR output and sends samples to the channel
 func (h handler) Parse(line string, deviceID string, sr chan<- *sdr.SweepResult) error {
 	fields := strings.Split(line, ",")
 	if len(fields) < 7 {
@@ -99,7 +97,14 @@ func (h handler) Parse(line string, deviceID string, sr chan<- *sdr.SweepResult)
 	return nil
 }
 
-// Device returns the device type
 func (h handler) Device() string {
 	return Device
+}
+
+func (h handler) Runtime() string {
+	return h.binPath
+}
+
+func (h handler) Args() []string {
+	return h.args
 }

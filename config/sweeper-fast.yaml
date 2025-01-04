@@ -44,7 +44,7 @@ devices:
   # HackRF device example
   - name: "Wide Scanner"             # Human readable identifier
     type: "hackrf"                   # Device type
-    enabled: false                   # Whether this device should be used
+    enabled: true                    # Whether this device should be used
     config: *hackRFConfig            # Device configuration
 
 # Telemetry configuration

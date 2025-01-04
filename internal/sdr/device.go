@@ -27,11 +27,50 @@ var (
 	ErrBrokenPipe = errors.New("broken pipe")
 )
 
-// Handler interface defines the methods required for handling a device
+// Handler defines the interface for managing and interacting with SDR devices.
+// It provides methods for command execution, output parsing, and device configuration.
+// Each implementation should handle device-specific details like command-line arguments
+// and output format parsing.
 type Handler interface {
+	// Cmd returns an exec.Cmd configured to run the device's command-line tool.
+	// The command should be properly configured with all necessary arguments and
+	// environment variables. The context allows for cancellation of long-running commands.
+	//
+	// Parameters:
+	//   - ctx: Context for command cancellation and timeout control
+	//
+	// Returns an exec.Cmd ready for execution.
 	Cmd(ctx context.Context) *exec.Cmd
+
+	// Parse processes a single line of output from the device's command-line tool.
+	// It converts the raw output into structured sweep results containing frequency
+	// and power measurements.
+	//
+	// Parameters:
+	//   - line: Raw text line from device output
+	//   - deviceID: Unique identifier of the device producing the output
+	//   - samples: Channel for sending parsed sweep results
+	//
+	// Returns error if parsing fails or the output format is invalid.
 	Parse(line string, deviceID string, samples chan<- *SweepResult) error
+
+	// Device returns the identifier or type of the SDR device being handled
+	// (e.g., "rtl-sdr", "hackrf", etc.).
+	//
+	// Returns a string identifying the device type.
 	Device() string
+
+	// Runtime returns the name or path of the command-line tool used to
+	// control the device (e.g., "rtl_power", "hackrf_sweep").
+	//
+	// Returns the command name or full path to the executable.
+	Runtime() string
+
+	// Args returns the list of command-line arguments needed to run the
+	// device's command-line tool with the desired configuration.
+	//
+	// Returns a slice of strings containing the command-line arguments.
+	Args() []string
 }
 
 // WithLogger sets the logger for the device
@@ -120,12 +159,14 @@ func (d *Device) BeginSampling(ctx context.Context, sr chan<- *SweepResult) (<-c
 		return nil, fmt.Errorf("error starting command: %w", err)
 	}
 
+	d.logger.Info("command started",
+		slog.String("runtime", d.handler.Runtime()),
+		slog.String("args", strings.Join(d.handler.Args(), " ")))
+
 	samplingStopped := make(chan error)
 
 	d.wg.Add(1)
 	go func() {
-		d.logger.Info("starting samples collection...")
-
 		done := make(chan error, 3) // expects three results from three goroutines
 
 		go d.handleStdout(stdout, d.deviceID, sr, done)
