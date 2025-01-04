@@ -1,5 +1,10 @@
 # Radio Surveillance Drone Platform
 
+> **Note:** This project is currently a work in progress. The codebase is actively under development and may undergo
+frequent changes before the first stable release. Expect breaking changes, incomplete features, and potential
+instability during this period. Please use with caution and report any issues or suggestions to the repository
+maintainers.
+
 A Go-based platform for collecting and analyzing radio frequency data using Software Defined Radio (SDR) devices mounted on drones. The system captures RF measurements while recording precise location and telemetry data, enabling spatial RF analysis and signal source mapping.
 
 ## Features
