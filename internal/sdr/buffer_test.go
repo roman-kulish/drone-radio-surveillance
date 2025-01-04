@@ -65,7 +65,7 @@ func TestFrequencyBuffer_Ordering(t *testing.T) {
 	}
 
 	// Get all sweeps and verify order
-	results := fb.DrainAll()
+	results := fb.Drain()
 	if len(results) != len(sweeps) {
 		t.Fatalf("Expected %d results, got %d", len(sweeps), len(results))
 	}
@@ -168,8 +168,8 @@ func TestFrequencyBuffer_EdgeCases(t *testing.T) {
 	if fb.Flush() != nil {
 		t.Error("Flush on empty buffer should return nil")
 	}
-	if fb.DrainAll() != nil {
-		t.Error("DrainAll on empty buffer should return nil")
+	if fb.Drain() != nil {
+		t.Error("Drain on empty buffer should return nil")
 	}
 	if fb.IsFull() {
 		t.Error("Empty buffer should not be full")
