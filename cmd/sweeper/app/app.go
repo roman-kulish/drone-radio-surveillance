@@ -60,5 +60,5 @@ func createStorage(config *StorageConfig) (storage.Store, error) {
 	}
 
 	dbPath = filepath.Join(dbPath, fmt.Sprintf("sdr_session_%s.sqlite", time.Now().UTC().Format("20060102_150405")))
-	return storage.New(dbPath), nil
+	return storage.NewSqliteStore(dbPath), nil
 }
