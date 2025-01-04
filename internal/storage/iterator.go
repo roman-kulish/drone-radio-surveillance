@@ -109,6 +109,24 @@ func WithTimeRange[T SpectralData](startTime, endTime time.Time) ReaderOption[T]
 	}
 }
 
+// NewSpectrumReader creates a new SpectrumReader instance for reading spectral data from a database,
+// applying optional filters.
+func NewSpectrumReader[T SpectralData](db *sql.DB, sessionID int64, includeTelemetry bool, opts ...ReaderOption[T],
+) (SpectrumReader[T], error) {
+	sr := &spectrumReader[T]{
+		db:               db,
+		sessionID:        sessionID,
+		includeTelemetry: includeTelemetry,
+	}
+	for _, opt := range opts {
+		opt(sr)
+	}
+	if err := sr.init(context.Background()); err != nil {
+		return nil, fmt.Errorf("initializing reader: %w", err)
+	}
+	return sr, nil
+}
+
 // spectrumReader implements SpectrumReader for SQLite database backend.
 type spectrumReader[T SpectralData] struct {
 	db *sql.DB

@@ -296,16 +296,7 @@ func (s *store) ReadSpectrum(ctx context.Context, sessionID int64, opts ...Reade
 	if err != nil {
 		return nil, fmt.Errorf("getting read connection: %w", err)
 	}
-
-	r := spectrumReader[spectrum.SpectralPoint]{db: db, sessionID: sessionID}
-	for _, opt := range opts {
-		opt(&r)
-	}
-
-	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initializing reader: %w", err)
-	}
-	return &r, nil
+	return NewSpectrumReader[spectrum.SpectralPoint](db, sessionID, false, opts...)
 }
 
 // ReadSpectrumWithTelemetry creates a new SpectrumReader with the given options.
@@ -315,20 +306,7 @@ func (s *store) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, 
 	if err != nil {
 		return nil, fmt.Errorf("getting read connection: %w", err)
 	}
-
-	r := spectrumReader[spectrum.SpectralPointWithTelemetry]{
-		db:               db,
-		includeTelemetry: true,
-		sessionID:        sessionID,
-	}
-	for _, opt := range opts {
-		opt(&r)
-	}
-
-	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initializing reader: %w", err)
-	}
-	return &r, nil
+	return NewSpectrumReader[spectrum.SpectralPointWithTelemetry](db, sessionID, true, opts...)
 }
 
 func (s *store) StoreTelemetry(ctx context.Context, sessionID int64, t *telemetry.Telemetry) (telemetryID int64, err error) {

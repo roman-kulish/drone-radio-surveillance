@@ -22,11 +22,11 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 	}
 	defer store.Close()
 
-	var options []func(*Orchestrator)
+	var opts []OrchestratorOption
 
 	// TODO: telemetry
 
-	orchestrator := NewOrchestrator(store, logger, options...)
+	orchestrator := NewOrchestrator(store, logger, opts...)
 	for _, c := range config.Devices {
 		if err = orchestrator.CreateDevice(&c); err != nil {
 			return fmt.Errorf("failed to create device: %w", err)

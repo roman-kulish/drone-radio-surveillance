@@ -13,6 +13,9 @@ import (
 	"github.com/roman-kulish/radio-surveillance/internal/telemetry"
 )
 
+// OrchestratorOption is a function type used to configure an Orchestrator instance
+type OrchestratorOption func(*Orchestrator)
+
 // WithTelemetry sets the telemetry provider to use for enriching sweep results
 func WithTelemetry(provider telemetry.Provider) func(*Orchestrator) {
 	return func(o *Orchestrator) {
@@ -37,7 +40,7 @@ type Orchestrator struct {
 }
 
 // NewOrchestrator creates a new Orchestrator
-func NewOrchestrator(store storage.Store, logger *slog.Logger, options ...func(*Orchestrator)) *Orchestrator {
+func NewOrchestrator(store storage.Store, logger *slog.Logger, opts ...OrchestratorOption) *Orchestrator {
 	d := Orchestrator{
 		configs:  make(map[string]any),
 		sessions: make(map[string]int64),
@@ -45,8 +48,8 @@ func NewOrchestrator(store storage.Store, logger *slog.Logger, options ...func(*
 		store:    store,
 	}
 
-	for _, option := range options {
-		option(&d)
+	for _, opt := range opts {
+		opt(&d)
 	}
 
 	return &d
