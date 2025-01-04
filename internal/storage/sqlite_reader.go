@@ -55,12 +55,12 @@ type SpectrumReader[T SpectralData] interface {
 
 // ReaderOption configures a SpectrumReader with specific filtering criteria.
 // The type parameter T must match the reader being configured.
-type ReaderOption[T SpectralData] func(*spectrumReader[T])
+type ReaderOption[T SpectralData] func(*SqliteSpectrumReader[T])
 
 // WithMinFreq sets the minimum frequency filter for the spectrum reader.
 // Spectrum points with frequencies below this value will be excluded.
 func WithMinFreq[T SpectralData](f float64) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.minFreq = &f
 	}
 }
@@ -68,7 +68,7 @@ func WithMinFreq[T SpectralData](f float64) ReaderOption[T] {
 // WithMaxFreq sets the maximum frequency filter for the spectrum reader.
 // Spectrum points with frequencies above this value will be excluded.
 func WithMaxFreq[T SpectralData](f float64) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.maxFreq = &f
 	}
 }
@@ -77,7 +77,7 @@ func WithMaxFreq[T SpectralData](f float64) ReaderOption[T] {
 // This is a convenience function equivalent to applying both WithMinFreq
 // and WithMaxFreq.
 func WithFreqRange[T SpectralData](minFreq, maxFreq float64) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.minFreq = &minFreq
 		r.maxFreq = &maxFreq
 	}
@@ -86,7 +86,7 @@ func WithFreqRange[T SpectralData](minFreq, maxFreq float64) ReaderOption[T] {
 // WithStartTime sets the start time filter for the spectrum reader.
 // Spectrum points with timestamps before this time will be excluded.
 func WithStartTime[T SpectralData](t time.Time) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.startTime = &t
 	}
 }
@@ -94,7 +94,7 @@ func WithStartTime[T SpectralData](t time.Time) ReaderOption[T] {
 // WithEndTime sets the end time filter for the spectrum reader.
 // Spectrum points with timestamps after this time will be excluded.
 func WithEndTime[T SpectralData](t time.Time) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.endTime = &t
 	}
 }
@@ -103,14 +103,32 @@ func WithEndTime[T SpectralData](t time.Time) ReaderOption[T] {
 // This is a convenience function equivalent to applying both WithStartTime
 // and WithEndTime.
 func WithTimeRange[T SpectralData](startTime, endTime time.Time) ReaderOption[T] {
-	return func(r *spectrumReader[T]) {
+	return func(r *SqliteSpectrumReader[T]) {
 		r.startTime = &startTime
 		r.endTime = &endTime
 	}
 }
 
-// spectrumReader implements SpectrumReader for SQLite database backend.
-type spectrumReader[T SpectralData] struct {
+// newSqliteSpectrumReader creates a new SpectrumReader instance for reading spectral data from a database,
+// applying optional filters.
+func newSqliteSpectrumReader[T SpectralData](db *sql.DB, sessionID int64, includeTelemetry bool, opts ...ReaderOption[T],
+) (*SqliteSpectrumReader[T], error) {
+	sr := &SqliteSpectrumReader[T]{
+		db:               db,
+		sessionID:        sessionID,
+		includeTelemetry: includeTelemetry,
+	}
+	for _, opt := range opts {
+		opt(sr)
+	}
+	if err := sr.init(context.Background()); err != nil {
+		return nil, fmt.Errorf("initializing reader: %w", err)
+	}
+	return sr, nil
+}
+
+// SqliteSpectrumReader implements SpectrumReader for SQLite database backend.
+type SqliteSpectrumReader[T SpectralData] struct {
 	db *sql.DB
 
 	sessionID        int64
@@ -130,7 +148,7 @@ type spectrumReader[T SpectralData] struct {
 	err                    error
 }
 
-func (sr *spectrumReader[T]) init(ctx context.Context) error {
+func (sr *SqliteSpectrumReader[T]) init(ctx context.Context) error {
 	if sr.db == nil {
 		return errors.New("database connection required")
 	}
@@ -154,7 +172,7 @@ func (sr *spectrumReader[T]) init(ctx context.Context) error {
 	return nil
 }
 
-func (sr *spectrumReader[T]) loadSession(ctx context.Context) (err error) {
+func (sr *SqliteSpectrumReader[T]) loadSession(ctx context.Context) (err error) {
 	stmt, err := sr.db.PrepareContext(ctx, selectSessionSQL)
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
@@ -174,7 +192,7 @@ func (sr *spectrumReader[T]) loadSession(ctx context.Context) (err error) {
 	return
 }
 
-func (sr *spectrumReader[T]) initFilters(ctx context.Context) (err error) {
+func (sr *SqliteSpectrumReader[T]) initFilters(ctx context.Context) (err error) {
 	timeFiltersSet := sr.startTime != nil && sr.endTime != nil
 	freqFiltersSet := sr.minFreq != nil && sr.maxFreq != nil
 
@@ -220,7 +238,7 @@ func (sr *spectrumReader[T]) initFilters(ctx context.Context) (err error) {
 	return nil
 }
 
-func (sr *spectrumReader[T]) initQuery(ctx context.Context) (err error) {
+func (sr *SqliteSpectrumReader[T]) initQuery(ctx context.Context) (err error) {
 	query := selectSamplesSQL
 	if sr.includeTelemetry {
 		query = selectSamplesWithTelemetrySQL
@@ -238,7 +256,7 @@ func (sr *spectrumReader[T]) initQuery(ctx context.Context) (err error) {
 	return nil
 }
 
-func (sr *spectrumReader[T]) convertPoint(point any) (T, error) {
+func (sr *SqliteSpectrumReader[T]) convertPoint(point any) (T, error) {
 	result, ok := point.(T)
 	if !ok {
 		var zero T
@@ -247,7 +265,7 @@ func (sr *spectrumReader[T]) convertPoint(point any) (T, error) {
 	return result, nil
 }
 
-func (sr *spectrumReader[T]) scanSample() (time.Time, T, error) {
+func (sr *SqliteSpectrumReader[T]) scanSample() (time.Time, T, error) {
 	var zero T
 
 	var sample sampleData
@@ -274,7 +292,7 @@ func (sr *spectrumReader[T]) scanSample() (time.Time, T, error) {
 	return timestamp, result, err
 }
 
-func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
+func (sr *SqliteSpectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
 	var zero T
 
 	var sample sampleWithTelemetryData
@@ -365,7 +383,7 @@ func (sr *spectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, error) {
 	return timestamp, result, err
 }
 
-func (sr *spectrumReader[T]) createZeroPoint(freq float64, template T) T {
+func (sr *SqliteSpectrumReader[T]) createZeroPoint(freq float64, template T) T {
 	zeroPower := 0.0
 	point := spectrum.SpectralPoint{
 		Frequency:  freq,
@@ -381,7 +399,7 @@ func (sr *spectrumReader[T]) createZeroPoint(freq float64, template T) T {
 // in the middle of the spectrum. We can either do (1) some sophisticated queries to try and select
 // complete data, if possible or (2) drop incomplete spans, or (3) fill the gaps with zero power
 // points. The latter is the simplest possible approach.
-func (sr *spectrumReader[T]) fillFrequencyRange(start, end float64, template T) ([]T, error) {
+func (sr *SqliteSpectrumReader[T]) fillFrequencyRange(start, end float64, template T) ([]T, error) {
 	binWidth := template.GetBinWidth()
 	if binWidth <= 0 {
 		return nil, fmt.Errorf("invalid bin width: %f", binWidth)
@@ -404,11 +422,11 @@ func (sr *spectrumReader[T]) fillFrequencyRange(start, end float64, template T) 
 	return points, nil
 }
 
-func (sr *spectrumReader[T]) Session() *spectrum.ScanSession {
+func (sr *SqliteSpectrumReader[T]) Session() *spectrum.ScanSession {
 	return sr.session
 }
 
-func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
+func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 	if sr.err != nil || sr.rows == nil {
 		return false
 	}
@@ -533,11 +551,11 @@ func (sr *spectrumReader[T]) Next(ctx context.Context) bool {
 	}
 }
 
-func (sr *spectrumReader[T]) Current() *spectrum.SpectralSpan[T] {
+func (sr *SqliteSpectrumReader[T]) Current() *spectrum.SpectralSpan[T] {
 	return sr.currentSpan
 }
 
-func (sr *spectrumReader[T]) Error() error {
+func (sr *SqliteSpectrumReader[T]) Error() error {
 	if sr.err != nil && !errors.Is(sr.err, ErrNoData) {
 		return sr.err
 	}
@@ -547,7 +565,7 @@ func (sr *spectrumReader[T]) Error() error {
 	return nil
 }
 
-func (sr *spectrumReader[T]) Close() error {
+func (sr *SqliteSpectrumReader[T]) Close() error {
 	if sr.rows != nil {
 		err := sr.rows.Close()
 		sr.currentSpan = nil

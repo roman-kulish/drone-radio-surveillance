@@ -73,6 +73,9 @@ type Handler interface {
 	Args() []string
 }
 
+// DeviceOption represents a functional option for configuring a Device.
+type DeviceOption func(*Device)
+
 // WithLogger sets the logger for the device
 func WithLogger(logger *slog.Logger) func(d *Device) {
 	return func(d *Device) {
@@ -111,21 +114,20 @@ type Device struct {
 }
 
 // NewDevice creates a new Device instance with a discard logger
-func NewDevice(deviceID string, h Handler, options ...func(*Device)) *Device {
+func NewDevice(deviceID string, h Handler, opts ...DeviceOption) *Device {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // nil logger
 
-	d := Device{
+	d := &Device{
 		deviceID:             deviceID,
 		handler:              h,
 		logger:               logger,
 		parseErrorsThreshold: ParseErrorsThreshold,
 	}
 
-	for _, option := range options {
-		option(&d)
+	for _, opt := range opts {
+		opt(d)
 	}
-
-	return &d
+	return d
 }
 
 // DeviceID returns the device ID

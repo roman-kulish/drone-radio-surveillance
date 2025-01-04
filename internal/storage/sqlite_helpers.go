@@ -146,7 +146,7 @@ func freqGreater(a, b, binWidth float64) bool {
 }
 
 var timestampFormats = []string{
-	// By default, store timestamps with whatever timezone they come with.
+	// By default, Sqlite store timestamps with whatever timezone they come with.
 	// When parsed, they will be returned with the same timezone.
 	"2006-01-02 15:04:05.999999999-07:00",
 	"2006-01-02T15:04:05.999999999-07:00",
