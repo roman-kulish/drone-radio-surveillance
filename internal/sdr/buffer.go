@@ -30,7 +30,7 @@ type SweepsBuffer struct {
 	list *list.List
 }
 
-// NewFrequencyBuffer creates a new frequency sweep buffer for the specified frequency range.
+// NewSweepsBuffer creates a new frequency sweep buffer for the specified frequency range.
 // The buffer will store up to capacity sweeps and remove flushCount sweeps when full.
 //
 // Parameters:
@@ -38,7 +38,7 @@ type SweepsBuffer struct {
 //   - flushCount: number of sweeps to remove when buffer is full
 //
 // Returns an error if parameters are invalid.
-func NewFrequencyBuffer(capacity, flushCount int) (*SweepsBuffer, error) {
+func NewSweepsBuffer(capacity, flushCount int) (*SweepsBuffer, error) {
 	if capacity <= 0 || flushCount <= 0 || flushCount > capacity {
 		return nil, fmt.Errorf("invalid buffer parameters: bufferCap=%d, toFlush=%d", capacity, flushCount)
 	}

@@ -90,10 +90,17 @@ func WithParseErrorsThreshold(threshold uint8) func(d *Device) {
 	}
 }
 
+func WithBuffer(buffer *SweepsBuffer) func(d *Device) {
+	return func(d *Device) {
+		d.buffer = buffer
+	}
+}
+
 // Device struct represents an SDR device that can be started (samples collection) and stopped
 type Device struct {
 	deviceID string
 	handler  Handler
+	buffer   *SweepsBuffer
 
 	isSampling atomic.Bool
 	cancel     context.CancelFunc
@@ -241,11 +248,29 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *Swee
 			continue
 		}
 
-		sr <- sweep
 		parseErrors = 0 // reset counter
+
+		if d.buffer == nil {
+			sr <- sweep
+			continue
+		}
+		if err = d.buffer.Insert(sweep); err != nil {
+			d.logger.Warn(fmt.Sprintf("inserting sweep into the buffer: %s", err.Error()), slog.String("line", line))
+			continue
+		}
+		if d.buffer.IsFull() {
+			for _, s := range d.buffer.Flush() {
+				sr <- s
+			}
+		}
+	}
+	if d.buffer != nil && d.buffer.Size() > 0 {
+		for _, s := range d.buffer.Drain() {
+			sr <- s
+		}
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, fs.ErrClosed) {
-		done <- fmt.Errorf("%w: error reading stdout: %w", ErrBrokenPipe, err)
+		done <- fmt.Errorf("%w: reading stdout: %w", ErrBrokenPipe, err)
 		return
 	}
 

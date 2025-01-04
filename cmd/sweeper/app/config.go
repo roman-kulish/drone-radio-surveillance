@@ -63,19 +63,21 @@ func (s *Settings) UnmarshalYAML(value *yaml.Node) error {
 
 // DeviceConfig represents a single Device configuration
 type DeviceConfig struct {
-	Name    string     `yaml:"name"`
-	Type    DeviceType `yaml:"type"`
-	Enabled bool       `yaml:"enabled"`
-	Config  any        `yaml:"config"`
+	Name    string        `yaml:"name"`
+	Type    DeviceType    `yaml:"type"`
+	Enabled bool          `yaml:"enabled"`
+	Config  any           `yaml:"config"`
+	Buffer  *BufferConfig `yaml:"buffer"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for custom deserialization of DeviceConfig from YAML input.
 func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 	var t struct {
-		Name    string     `yaml:"name"`
-		Type    DeviceType `yaml:"type"`
-		Enabled bool       `yaml:"enabled"`
-		Config  yamlNode   `yaml:"config"`
+		Name    string        `yaml:"name"`
+		Type    DeviceType    `yaml:"type"`
+		Enabled bool          `yaml:"enabled"`
+		Config  yamlNode      `yaml:"config"`
+		Buffer  *BufferConfig `yaml:"buffer"`
 	}
 	if err := value.Decode(&t); err != nil {
 		return err
@@ -85,6 +87,7 @@ func (d *DeviceConfig) UnmarshalYAML(value *yaml.Node) error {
 		Name:    t.Name,
 		Type:    t.Type,
 		Enabled: t.Enabled,
+		Buffer:  t.Buffer,
 	}
 	switch t.Type {
 	case DeviceRTLSDR:
@@ -119,6 +122,12 @@ type TelemetryConfig struct {
 	Enabled         bool            `yaml:"enabled"`
 	CaptureInterval []string        `yaml:"captureInterval"`
 	Types           []TelemetryType `yaml:"types"`
+}
+
+// BufferConfig represents device buffer settings
+type BufferConfig struct {
+	Capacity   int `yaml:"capacity"`
+	FlushCount int `yaml:"flushCount"`
 }
 
 // StorageConfig represents storage settings

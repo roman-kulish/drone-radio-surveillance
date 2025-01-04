@@ -75,7 +75,19 @@ func (o *Orchestrator) CreateDevice(config *DeviceConfig) error {
 		return fmt.Errorf("creating Device: unknown type '%s'", config.Type)
 	}
 
-	device := sdr.NewDevice(config.Name, handler, sdr.WithLogger(o.logger))
+	opts := []func(*sdr.Device){
+		sdr.WithLogger(o.logger),
+	}
+
+	if config.Buffer != nil {
+		buffer, err := sdr.NewSweepsBuffer(config.Buffer.Capacity, config.Buffer.FlushCount)
+		if err != nil {
+			return fmt.Errorf("creating buffer: %w", err)
+		}
+		opts = append(opts, sdr.WithBuffer(buffer))
+	}
+
+	device := sdr.NewDevice(config.Name, handler, opts...)
 	if _, ok := o.configs[device.DeviceID()]; ok {
 		return fmt.Errorf("device %s already exists", config.Name)
 	}
