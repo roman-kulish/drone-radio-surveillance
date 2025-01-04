@@ -21,3 +21,11 @@ type SweepResult struct {
 	Device         string         // Device type (e.g., "rtl-sdr", "hackrf")
 	DeviceID       string         // Serial number or index (human-readable)
 }
+
+// CenterFrequency returns the center frequency of the sweep bin.
+// The center frequency is calculated as the start frequency plus half of the bin width.
+// For example, if the sweep bin starts at 1000 MHz with a width of 200 kHz,
+// the center frequency would be 1000.1 MHz.
+func (s *SweepResult) CenterFrequency() float64 {
+	return s.StartFrequency + (s.BinWidth / 2)
+}

@@ -52,7 +52,7 @@ type Handler interface {
 	//   - samples: Channel for sending parsed sweep results
 	//
 	// Returns error if parsing fails or the output format is invalid.
-	Parse(line string, deviceID string, samples chan<- *SweepResult) error
+	Parse(line string, deviceID string) (*SweepResult, error)
 
 	// Device returns the identifier or type of the SDR device being handled
 	// (e.g., "rtl-sdr", "hackrf", etc.).
@@ -228,7 +228,8 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *Swee
 			continue
 		}
 
-		if err := d.handler.Parse(line, deviceID, sr); err != nil {
+		sweep, err := d.handler.Parse(line, deviceID)
+		if err != nil {
 			parseErrors++
 			d.logger.Warn(fmt.Sprintf("error parsing samples: %s", err.Error()), slog.String("line", line))
 
@@ -240,6 +241,7 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *Swee
 			continue
 		}
 
+		sr <- sweep
 		parseErrors = 0 // reset counter
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, fs.ErrClosed) {

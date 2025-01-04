@@ -1,7 +1,7 @@
 -- Session metadata (one record per device in a multi-device capture)
 CREATE TABLE IF NOT EXISTS sessions (
     id INTEGER PRIMARY KEY,
-    start_time DATETIME NOT NULL,
+    start_time DATETIME NOT NULL, -- session start time
     device_type TEXT NOT NULL,    -- 'rtl-sdr' or 'hackrf'
     device_id TEXT NOT NULL,      -- Serial number or unique identifier
     config TEXT NOT NULL,         -- Device config

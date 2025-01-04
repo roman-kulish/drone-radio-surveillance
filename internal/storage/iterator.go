@@ -392,7 +392,7 @@ func (sr *spectrumReader[T]) fillFrequencyRange(start, end float64, template T) 
 		return nil, nil
 	}
 
-	points := make([]T, numPoints)
+	points := make([]T, 0, numPoints)
 	for i := 0; i < numPoints; i++ {
 		freq := start + float64(i)*binWidth
 		if freq <= end { // make sure there is no overlap
