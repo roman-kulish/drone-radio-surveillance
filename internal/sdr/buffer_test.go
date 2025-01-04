@@ -7,7 +7,7 @@ import (
 
 func TestFrequencyBuffer_Ordering(t *testing.T) {
 	// Create buffer with 1MHz to 6GHz range, capacity 10, flush 5
-	fb, err := NewFrequencyBuffer(1_000_000, 6_000_000_000, 10, 5)
+	fb, err := NewFrequencyBuffer(10, 5)
 	if err != nil {
 		t.Fatalf("Failed to create buffer: %v", err)
 	}
@@ -15,38 +15,45 @@ func TestFrequencyBuffer_Ordering(t *testing.T) {
 	baseTime := time.Now()
 	sweeps := []*SweepResult{
 		{ // First sweep, first chunk
-			StartFrequency: 5_700_000_000,
-			BinWidth:       200_000,
+			StartFrequency: 5_000_700_000,
+			EndFrequency:   5_000_800_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime,
 		},
 		{ // First sweep, first chunk
-			StartFrequency: 6_000_000_000,
-			BinWidth:       200_000,
+			StartFrequency: 5_000_600_000,
+			EndFrequency:   5_000_700_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime,
 		},
 		{ // First sweep, first chunk
-			StartFrequency: 5_800_000_000,
-			BinWidth:       200_000,
+			StartFrequency: 5_000_800_000,
+			EndFrequency:   5_000_900_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime,
 		},
 		{ // Second sweep starts
 			StartFrequency: 1_000_000,
-			BinWidth:       200_000,
+			EndFrequency:   1_100_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime.Add(time.Second),
 		},
 		{ // Should go before 6 GHz in first sweep
-			StartFrequency: 5_900_000_000,
-			BinWidth:       200_000,
+			StartFrequency: 5_000_900_000,
+			EndFrequency:   5_001_000_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime.Add(2 * time.Second),
 		},
 		{ // Part of second sweep
 			StartFrequency: 1_300_000,
-			BinWidth:       200_000,
+			EndFrequency:   1_400_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime.Add(3 * time.Second),
 		},
 		{ // Part of second sweep
 			StartFrequency: 1_200_000,
-			BinWidth:       200_000,
+			EndFrequency:   1_300_000,
+			BinWidth:       100_000,
 			Timestamp:      baseTime.Add(3 * time.Second),
 		},
 	}
@@ -72,12 +79,12 @@ func TestFrequencyBuffer_Ordering(t *testing.T) {
 
 	// Expected order of frequencies
 	expected := []float64{
-		5_700_000_000,
-		5_800_000_000,
-		5_900_000_000, // First sweep chunk 1
-		6_000_000_000, // Second sweep chunk 1
-		1_000_000,     // First sweep chunk 2
-		1_200_000,     // Second sweep chunk 2
+		5_000_600_000,
+		5_000_700_000,
+		5_000_800_000,
+		5_000_900_000,
+		1_000_000,
+		1_200_000,
 		1_300_000,
 	}
 
@@ -91,7 +98,7 @@ func TestFrequencyBuffer_Ordering(t *testing.T) {
 }
 
 func TestFrequencyBuffer_FlushBehavior(t *testing.T) {
-	fb, err := NewFrequencyBuffer(1_000_000, 6_000_000_000, 3, 2)
+	fb, err := NewFrequencyBuffer(3, 2)
 	if err != nil {
 		t.Fatalf("Failed to create buffer: %v", err)
 	}
@@ -99,17 +106,20 @@ func TestFrequencyBuffer_FlushBehavior(t *testing.T) {
 	baseTime := time.Now()
 	sweeps := []*SweepResult{
 		{
-			StartFrequency: 6_000_000_000,
+			StartFrequency: 5_000_600_000,
+			EndFrequency:   5_000_800_000,
 			BinWidth:       200_000,
 			Timestamp:      baseTime,
 		},
 		{
-			StartFrequency: 5_900_000_000,
+			StartFrequency: 5_000_800_000,
+			EndFrequency:   5_001_000_000,
 			BinWidth:       200_000,
 			Timestamp:      baseTime.Add(time.Second),
 		},
 		{
 			StartFrequency: 1_000_000,
+			EndFrequency:   1_200_000,
 			BinWidth:       200_000,
 			Timestamp:      baseTime.Add(2 * time.Second),
 		},
@@ -141,8 +151,8 @@ func TestFrequencyBuffer_FlushBehavior(t *testing.T) {
 
 	// Verify frequencies of flushed items
 	expected := []float64{
-		5_900_000_000,
-		6_000_000_000,
+		5_000_600_000,
+		5_000_800_000,
 	}
 
 	for i, freq := range expected {
@@ -154,7 +164,7 @@ func TestFrequencyBuffer_FlushBehavior(t *testing.T) {
 }
 
 func TestFrequencyBuffer_EdgeCases(t *testing.T) {
-	fb, err := NewFrequencyBuffer(1_000_000, 6_000_000_000, 5, 2)
+	fb, err := NewFrequencyBuffer(5, 2)
 	if err != nil {
 		t.Fatalf("Failed to create buffer: %v", err)
 	}
@@ -180,20 +190,17 @@ func TestFrequencyBuffer_EdgeCases(t *testing.T) {
 
 	// Test buffer creation with invalid parameters
 	testCases := []struct {
-		name      string
-		startFreq float64
-		endFreq   float64
-		capacity  int
-		flush     int
+		name     string
+		capacity int
+		flush    int
 	}{
-		{"invalid capacity", 1e6, 6e9, 0, 1},
-		{"invalid flush count", 1e6, 6e9, 5, 6},
-		{"invalid frequency range", 6e9, 1e6, 5, 2},
+		{"invalid capacity", 0, 1},
+		{"invalid flush count", 5, 6},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := NewFrequencyBuffer(tc.startFreq, tc.endFreq, tc.capacity, tc.flush)
+			_, err := NewFrequencyBuffer(tc.capacity, tc.flush)
 			if err == nil {
 				t.Error("Expected error for invalid parameters")
 			}
