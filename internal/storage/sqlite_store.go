@@ -182,44 +182,22 @@ func (s *SqliteStore) Sessions(ctx context.Context) (sessions []*spectrum.ScanSe
 
 // ReadSpectrum creates a new SpectrumReader with the given options.
 // This reader returns basic spectral points.
-func (s *SqliteStore) ReadSpectrum(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPoint]) (SpectrumReader[spectrum.SpectralPoint], error) {
+func (s *SqliteStore) ReadSpectrum(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPoint]) (*SqliteSpectrumReader[spectrum.SpectralPoint], error) {
 	db, err := s.getReadDB()
 	if err != nil {
 		return nil, fmt.Errorf("getting read connection: %w", err)
 	}
-
-	r := spectrumReader[spectrum.SpectralPoint]{db: db, sessionID: sessionID}
-	for _, opt := range opts {
-		opt(&r)
-	}
-
-	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initializing reader: %w", err)
-	}
-	return &r, nil
+	return newSqliteSpectrumReader[spectrum.SpectralPoint](db, sessionID, false, opts...)
 }
 
 // ReadSpectrumWithTelemetry creates a new SpectrumReader with the given options.
 // This reader returns spectral points enriched with telemetry data.
-func (s *SqliteStore) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPointWithTelemetry]) (SpectrumReader[spectrum.SpectralPointWithTelemetry], error) {
+func (s *SqliteStore) ReadSpectrumWithTelemetry(ctx context.Context, sessionID int64, opts ...ReaderOption[spectrum.SpectralPointWithTelemetry]) (*SqliteSpectrumReader[spectrum.SpectralPointWithTelemetry], error) {
 	db, err := s.getReadDB()
 	if err != nil {
 		return nil, fmt.Errorf("getting read connection: %w", err)
 	}
-
-	r := spectrumReader[spectrum.SpectralPointWithTelemetry]{
-		db:               db,
-		includeTelemetry: true,
-		sessionID:        sessionID,
-	}
-	for _, opt := range opts {
-		opt(&r)
-	}
-
-	if err = r.init(ctx); err != nil {
-		return nil, fmt.Errorf("initializing reader: %w", err)
-	}
-	return &r, nil
+	return newSqliteSpectrumReader[spectrum.SpectralPointWithTelemetry](db, sessionID, true, opts...)
 }
 
 func (s *SqliteStore) StoreTelemetry(ctx context.Context, sessionID int64, t *telemetry.Telemetry) (telemetryID int64, err error) {
