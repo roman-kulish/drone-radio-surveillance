@@ -52,7 +52,7 @@ type Handler interface {
 	//   - samples: Channel for sending parsed sweep results
 	//
 	// Returns error if parsing fails or the output format is invalid.
-	Parse(line string, deviceID string, samples chan<- *SweepResult) error
+	Parse(line string, deviceID string) (*SweepResult, error)
 
 	// Device returns the identifier or type of the SDR device being handled
 	// (e.g., "rtl-sdr", "hackrf", etc.).
@@ -73,6 +73,9 @@ type Handler interface {
 	Args() []string
 }
 
+// DeviceOption represents a functional option for configuring a Device.
+type DeviceOption func(*Device)
+
 // WithLogger sets the logger for the device
 func WithLogger(logger *slog.Logger) func(d *Device) {
 	return func(d *Device) {
@@ -90,10 +93,17 @@ func WithParseErrorsThreshold(threshold uint8) func(d *Device) {
 	}
 }
 
+func WithBuffer(buffer *SweepsBuffer) func(d *Device) {
+	return func(d *Device) {
+		d.buffer = buffer
+	}
+}
+
 // Device struct represents an SDR device that can be started (samples collection) and stopped
 type Device struct {
 	deviceID string
 	handler  Handler
+	buffer   *SweepsBuffer
 
 	isSampling atomic.Bool
 	cancel     context.CancelFunc
@@ -104,21 +114,20 @@ type Device struct {
 }
 
 // NewDevice creates a new Device instance with a discard logger
-func NewDevice(deviceID string, h Handler, options ...func(*Device)) *Device {
+func NewDevice(deviceID string, h Handler, opts ...DeviceOption) *Device {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil)) // nil logger
 
-	d := Device{
+	d := &Device{
 		deviceID:             deviceID,
 		handler:              h,
 		logger:               logger,
 		parseErrorsThreshold: ParseErrorsThreshold,
 	}
 
-	for _, option := range options {
-		option(&d)
+	for _, opt := range opts {
+		opt(d)
 	}
-
-	return &d
+	return d
 }
 
 // DeviceID returns the device ID
@@ -228,7 +237,8 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *Swee
 			continue
 		}
 
-		if err := d.handler.Parse(line, deviceID, sr); err != nil {
+		sweep, err := d.handler.Parse(line, deviceID)
+		if err != nil {
 			parseErrors++
 			d.logger.Warn(fmt.Sprintf("error parsing samples: %s", err.Error()), slog.String("line", line))
 
@@ -241,9 +251,28 @@ func (d *Device) handleStdout(stdout io.Reader, deviceID string, sr chan<- *Swee
 		}
 
 		parseErrors = 0 // reset counter
+
+		if d.buffer == nil {
+			sr <- sweep
+			continue
+		}
+		if err = d.buffer.Insert(sweep); err != nil {
+			d.logger.Warn(fmt.Sprintf("inserting sweep into the buffer: %s", err.Error()), slog.String("line", line))
+			continue
+		}
+		if d.buffer.IsFull() {
+			for _, s := range d.buffer.Flush() {
+				sr <- s
+			}
+		}
+	}
+	if d.buffer != nil && d.buffer.Size() > 0 {
+		for _, s := range d.buffer.Drain() {
+			sr <- s
+		}
 	}
 	if err := scanner.Err(); err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, fs.ErrClosed) {
-		done <- fmt.Errorf("%w: error reading stdout: %w", ErrBrokenPipe, err)
+		done <- fmt.Errorf("%w: reading stdout: %w", ErrBrokenPipe, err)
 		return
 	}
 

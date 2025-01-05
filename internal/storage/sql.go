@@ -4,6 +4,12 @@ import (
 	_ "embed"
 )
 
+//go:embed init_schema.sql
+var initSchemaSQL string
+
+//go:embed init_indexes.sql
+var initIndexesSQL string
+
 const (
 	// insertSessionSQL creates a new capture session record.
 	// Parameters:
@@ -67,28 +73,6 @@ const (
             radio_rssi
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-
-	// insertSampleSQL stores a single spectrum measurement.
-	// Parameters:
-	//   1. session_id (int64): Associated session ID
-	//   2. timestamp (datetime): Time of measurement
-	//   3. frequency (float64): Center frequency in Hz
-	//   4. bin_width (float64): Frequency bin width in Hz
-	//   5. power (float64): Signal power in dBm
-	//   6. num_samples (int|null): Optional sample count
-	//   7. telemetry_id (int64|null): Optional link to telemetry
-	// Returns: last inserted ID
-	insertSampleSQL = `
-	    INSERT INTO samples (
-	        session_id,
-	        timestamp,
-	        frequency,
-	        bin_width,
-	        power,
-	        num_samples,
-	        telemetry_id
-	    )
-	    VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	// selectFilterValuesSQL retrieves the bounds of frequency and time
 	// for all samples in a given session.
@@ -168,6 +152,3 @@ const (
 		    AND frequency BETWEEN ? AND ?
 		ORDER BY timestamp, frequency`
 )
-
-//go:embed schema.sql
-var schemaSQL string
