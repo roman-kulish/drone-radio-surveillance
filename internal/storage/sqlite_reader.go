@@ -134,6 +134,7 @@ type SqliteSpectrumReader[T SpectralData] struct {
 	sessionID        int64
 	session          *spectrum.ScanSession
 	includeTelemetry bool
+	numChunks        int
 
 	startTime *time.Time // Optional start of time range filter
 	endTime   *time.Time // Optional end of time range filter
@@ -385,13 +386,28 @@ func (sr *SqliteSpectrumReader[T]) scanSampleWithTelemetry() (time.Time, T, erro
 
 func (sr *SqliteSpectrumReader[T]) createZeroPoint(freq float64, template T) T {
 	zeroPower := 0.0
-	point := spectrum.SpectralPoint{
-		Frequency:  freq,
-		Power:      &zeroPower,
-		BinWidth:   template.GetBinWidth(),
-		NumSamples: template.GetNumSamples(),
+	switch v := any(template).(type) {
+	case spectrum.SpectralPointWithTelemetry:
+		point := spectrum.SpectralPointWithTelemetry{
+			SpectralPoint: spectrum.SpectralPoint{
+				Frequency:  freq,
+				Power:      &zeroPower,
+				BinWidth:   template.GetBinWidth(),
+				NumSamples: template.GetNumSamples(),
+			},
+			Telemetry: v.Telemetry,
+		}
+		return any(point).(T)
+
+	default:
+		point := spectrum.SpectralPoint{
+			Frequency:  freq,
+			Power:      &zeroPower,
+			BinWidth:   template.GetBinWidth(),
+			NumSamples: template.GetNumSamples(),
+		}
+		return any(point).(T)
 	}
-	return any(point).(T)
 }
 
 // fillFrequencyRange fills a slice with zero power spectral points for the given frequency range.
@@ -432,11 +448,16 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 	}
 
 	if sr.nextSampleExists {
-		sr.currentSpan = &spectrum.SpectralSpan[T]{
-			Timestamp: sr.nextSpanStartTimestamp,
-			StartFreq: sr.nextSample.GetFrequency(),
-			Samples:   []T{sr.nextSample},
+		if sr.numChunks == 0 {
+			n := (*sr.maxFreq - *sr.minFreq) / sr.nextSample.GetBinWidth()
+			sr.numChunks = int(n * 1.1) // add 10% to account for rounding errors and variations in bin width
 		}
+		sr.currentSpan = &spectrum.SpectralSpan[T]{
+			Timestamp:      sr.nextSpanStartTimestamp,
+			FrequencyStart: sr.nextSample.GetFrequency(),
+			Samples:        make([]T, 0, sr.numChunks),
+		}
+		sr.currentSpan.Samples = append(sr.currentSpan.Samples, sr.nextSample)
 		sr.nextSampleExists = false
 
 		// Detect and fill gaps between the beginning of the spectrum and sr.nextSample.Frequency
@@ -447,7 +468,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 				return false
 			}
 			sr.currentSpan.Samples = append(gapPoints, sr.currentSpan.Samples...)
-			sr.currentSpan.StartFreq = *sr.minFreq
+			sr.currentSpan.FrequencyStart = *sr.minFreq
 		}
 	}
 
@@ -462,7 +483,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 		if !sr.rows.Next() {
 			if sr.currentSpan != nil && len(sr.currentSpan.Samples) > 0 {
 				lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
-				sr.currentSpan.EndFreq = lastSample.GetFrequency()
+				sr.currentSpan.FrequencyEnd = lastSample.GetFrequency()
 
 				// Detect and fill gaps between the last reading and the end of the spectrum
 				if freqLess(lastSample.GetFrequency(), *sr.maxFreq, lastSample.GetBinWidth()) {
@@ -472,7 +493,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 						return false
 					}
 					sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
-					sr.currentSpan.EndFreq = *sr.maxFreq
+					sr.currentSpan.FrequencyEnd = *sr.maxFreq
 				}
 
 				sr.err = ErrNoData
@@ -494,11 +515,16 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 
 		// If no current span, create new one
 		if sr.currentSpan == nil {
-			sr.currentSpan = &spectrum.SpectralSpan[T]{
-				Timestamp: timestamp,
-				StartFreq: sample.GetFrequency(),
-				Samples:   []T{sample},
+			if sr.numChunks == 0 {
+				n := (*sr.maxFreq - *sr.minFreq) / sample.GetBinWidth()
+				sr.numChunks = int(n * 1.1)
 			}
+			sr.currentSpan = &spectrum.SpectralSpan[T]{
+				Timestamp:      timestamp,
+				FrequencyStart: sample.GetFrequency(),
+				Samples:        make([]T, 0, sr.numChunks),
+			}
+			sr.currentSpan.Samples = append(sr.currentSpan.Samples, sample)
 
 			// Detect and fill the gap between the beginning of the spectrum and sr.nextSample.Frequency
 			if freqGreater(sample.GetFrequency(), *sr.minFreq, sample.GetBinWidth()) {
@@ -508,7 +534,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 					return false
 				}
 				sr.currentSpan.Samples = append(gapPoints, sr.currentSpan.Samples...)
-				sr.currentSpan.StartFreq = *sr.minFreq
+				sr.currentSpan.FrequencyStart = *sr.minFreq
 			}
 			continue
 		}
@@ -517,7 +543,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 		lastSample := sr.currentSpan.Samples[len(sr.currentSpan.Samples)-1]
 		if sample.GetFrequency() < lastSample.GetFrequency() {
 			// Frequency rolled over - complete current span
-			sr.currentSpan.EndFreq = lastSample.GetFrequency()
+			sr.currentSpan.FrequencyEnd = lastSample.GetFrequency()
 
 			// Detect and fill the gap between the last reading and the end of the spectrum
 			if freqLess(lastSample.GetFrequency(), *sr.maxFreq, lastSample.GetBinWidth()) {
@@ -527,7 +553,7 @@ func (sr *SqliteSpectrumReader[T]) Next(ctx context.Context) bool {
 					return false
 				}
 				sr.currentSpan.Samples = append(sr.currentSpan.Samples, gapPoints...)
-				sr.currentSpan.EndFreq = *sr.maxFreq
+				sr.currentSpan.FrequencyEnd = *sr.maxFreq
 			}
 
 			sr.nextSample = sample

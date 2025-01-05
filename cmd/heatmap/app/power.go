@@ -5,47 +5,21 @@ import (
 	"sync"
 )
 
-// NormalizePower converts a power value to a normalized value between 0 and 1
-// power: input power in dBm
-// min: lower bound of power range (from histogram)
-// max: upper bound of power range (from histogram)
-func NormalizePower(power, min, max float64) float64 {
-	// Protection against invalid ranges
-	if max <= min {
-		return 0.5 // Return mid-point if range is invalid
-	}
-
-	// Linear normalization with clamping
-	normalized := (power - min) / (max - min)
-	return math.Max(0, math.Min(1, normalized))
-}
-
-// NormalizePowerEnhanced provides enhanced normalization with non-linear scaling
-// to improve visibility of weaker signals
-func NormalizePowerEnhanced(power, min, max float64) float64 {
-	// Protection against invalid ranges
-	if max <= min {
-		return 0.5
-	}
-
-	// Linear normalization first
-	normalized := (power - min) / (max - min)
-
-	// Clamp to [0,1]
-	normalized = math.Max(0, math.Min(1, normalized))
-
-	// Apply non-linear scaling to enhance lower power signals
-	// Using a power function with exponent 0.7 gives a good balance
-	// Lower exponents will enhance weak signals more
-	return math.Pow(normalized, 0.7)
-}
-
 // PowerBounds represents the calculated power boundaries
 type PowerBounds struct {
 	Min       float64
 	Max       float64
 	Mean      float64
 	Reference float64
+}
+
+func defaultPowerBounds() PowerBounds {
+	return PowerBounds{
+		Min:       -120,
+		Max:       -90,
+		Mean:      -105,
+		Reference: -105,
+	}
 }
 
 // PowerHistogram maintains a histogram of power values with 1dBm bins
@@ -75,9 +49,9 @@ func getBinIndex(power float64) int {
 	return int(math.Floor(power)) // 1dBm bins
 }
 
-// Update adds new power readings to the histogram
-func (h *PowerHistogram) Update(powers []float64) {
-	if len(powers) == 0 {
+// Update adds new power reading to the histogram
+func (h *PowerHistogram) Update(power *float64) {
+	if power == nil {
 		return
 	}
 
@@ -85,18 +59,16 @@ func (h *PowerHistogram) Update(powers []float64) {
 	defer h.mu.Unlock()
 
 	// Update bins
-	for _, power := range powers {
-		bin := getBinIndex(power)
-		h.bins[bin]++
-		h.totalCount++
+	bin := getBinIndex(*power)
+	h.bins[bin]++
+	h.totalCount++
 
-		// Update min/max bins
-		if bin < h.minBin {
-			h.minBin = bin
-		}
-		if bin > h.maxBin {
-			h.maxBin = bin
-		}
+	// Update min/max bins
+	if bin < h.minBin {
+		h.minBin = bin
+	}
+	if bin > h.maxBin {
+		h.maxBin = bin
 	}
 }
 
@@ -117,12 +89,7 @@ func (h *PowerHistogram) GetPercentileBounds() PowerBounds {
 	defer h.mu.RUnlock()
 
 	if h.totalCount == 0 {
-		return PowerBounds{
-			Min:       -120,
-			Max:       -90,
-			Mean:      -105,
-			Reference: -105,
-		}
+		return defaultPowerBounds()
 	}
 
 	// Calculate target counts for 5th and 95th percentiles
@@ -189,24 +156,23 @@ type SmoothBounds struct {
 // NewSmoothBounds creates a new bounds smoother
 func NewSmoothBounds(alpha float64) *SmoothBounds {
 	return &SmoothBounds{
-		hist:  NewPowerHistogram(),
-		alpha: alpha,
-		current: PowerBounds{
-			Min:       -120,
-			Max:       -90,
-			Mean:      -105,
-			Reference: -105,
-		},
+		hist:    NewPowerHistogram(),
+		alpha:   alpha,
+		current: defaultPowerBounds(),
 	}
 }
 
-// Update adds new data and returns smoothed bounds
-func (s *SmoothBounds) Update(powers []float64) PowerBounds {
+// Update adds new power reading and returns smoothed bounds
+func (s *SmoothBounds) Update(power *float64) PowerBounds {
+	if power == nil {
+		return s.current
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Update histogram
-	s.hist.Update(powers)
+	s.hist.Update(power)
 
 	// Get new bounds
 	newBounds := s.hist.GetPercentileBounds()
@@ -220,16 +186,19 @@ func (s *SmoothBounds) Update(powers []float64) PowerBounds {
 	return s.current
 }
 
+// Current returns the current smoothed power bounds
+func (s *SmoothBounds) Current() PowerBounds {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.current
+}
+
 // Clear resets the histogram and bounds
 func (s *SmoothBounds) Clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.hist.Clear()
-	s.current = PowerBounds{
-		Min:       -120,
-		Max:       -90,
-		Mean:      -105,
-		Reference: -105,
-	}
+	s.current = defaultPowerBounds()
 }

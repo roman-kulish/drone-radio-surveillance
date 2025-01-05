@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	ImagePNG  = "png"
-	ImageJPEG = "jpeg"
+	ImagePNG  ImageFormat = "png"
+	ImageJPEG ImageFormat = "jpeg"
 )
 
 type ImageFormat string
@@ -17,10 +17,9 @@ type ImageFormat string
 type Config struct {
 	DBPath        string
 	SessionID     int64
+	Theme         ColorTheme
 	OutputFile    string
 	Format        ImageFormat
-	MaxPower      *float64
-	MinPower      *float64
 	Verbose       bool
 	NoAnnotations bool
 }
@@ -30,55 +29,60 @@ var validImageFormats = map[ImageFormat]struct{}{
 	ImageJPEG: {},
 }
 
+var validThemes = map[ColorTheme]struct{}{
+	ColorTheme(""): {},
+	ClassicTheme:   {},
+	GrayscaleTheme: {},
+	JungleTheme:    {},
+	ThermalTheme:   {},
+	MarineTheme:    {},
+}
+
 func NewConfig() *Config {
 	return &Config{
 		Format: ImagePNG,
+		Theme:  "",
 	}
 }
 
 func NewConfigFromCLI() (*Config, error) {
 	c := NewConfig()
 
-	var imageFormat string
-	var minPower, maxPower float64
+	var imageFormat, theme string
 	flag.StringVar(&c.DBPath, "db", "", "Path to the database file")
 	flag.Int64Var(&c.SessionID, "s", 1, "Session ID")
 	flag.StringVar(&c.OutputFile, "o", "", "Path to the output file")
 	flag.StringVar(&imageFormat, "f", string(ImagePNG), "Output image format. [png, jpeg]")
-	flag.Float64Var(&minPower, "min-power", 0, "Define a manual minimum power (format nn.n)")
-	flag.Float64Var(&maxPower, "max-power", 0, "Define a manual maximum power (format nn.n)")
+	flag.StringVar(&theme, "theme", "", "Color theme. [classic, grayscale, jungle, thermal, marine]")
 	flag.BoolVar(&c.Verbose, "verbose", false, "Enable more verbose output")
 	flag.BoolVar(&c.NoAnnotations, "no-annotations", false, "Disabled annotations such as time and frequency scales")
 	flag.Parse()
 
 	imageFormat = strings.ToLower(imageFormat)
-
-	flag.Visit(func(f *flag.Flag) {
-		if f.Name == "min-power" {
-			c.MinPower = &minPower
-		}
-		if f.Name == "max-power" {
-			c.MaxPower = &maxPower
-		}
-	})
+	theme = strings.ToLower(theme)
 
 	var err error
-	if c.DBPath == "" {
+	switch {
+	case c.DBPath == "":
 		err = errors.New("db path is required")
-	} else if c.SessionID <= 0 {
+	case c.SessionID <= 0:
 		err = errors.New("session id is required")
-	} else if c.OutputFile == "" {
+	case c.OutputFile == "":
 		err = errors.New("output file is required")
-	} else if _, ok := validImageFormats[ImageFormat(imageFormat)]; !ok {
+	}
+	if _, ok := validImageFormats[ImageFormat(imageFormat)]; !ok {
 		err = fmt.Errorf("invalid image format: %s", imageFormat)
 	}
-
+	if _, ok := validThemes[ColorTheme(theme)]; !ok {
+		err = fmt.Errorf("invalid theme: %s", theme)
+	}
 	if err != nil {
 		flag.Usage()
 		return nil, err
 	}
 
 	c.Format = ImageFormat(imageFormat)
+	c.Theme = ColorTheme(theme)
 	c.OutputFile = fmt.Sprintf("%s.%s", c.OutputFile, c.Format)
 	return c, nil
 }
