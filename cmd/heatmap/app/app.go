@@ -59,7 +59,7 @@ func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Confi
 }
 
 func renderSpectrum(spec *SpectrumData, config *Config) error {
-	colorMap := NewColorMapper(256, config.Theme, spec.BoundsTracker.Current())
+	colorMap := NewColorMapper(config.Theme, spec.BoundsTracker.Current())
 	img := image.NewRGBA(image.Rect(0, 0, spec.Width, spec.Height))
 	for y, span := range spec.Spans {
 		for x, power := range span {
