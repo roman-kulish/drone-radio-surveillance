@@ -48,8 +48,8 @@ type SpectralPointWithTelemetry struct {
 // It contains a sequence of measurements across a frequency range, optionally
 // including telemetry data for each point.
 type SpectralSpan[T SpectralPoint | SpectralPointWithTelemetry] struct {
-	Timestamp time.Time `json:"timestamp"`         // When this span of measurements was taken
-	StartFreq float64   `json:"startFreq"`         // Start frequency of the span in Hz
-	EndFreq   float64   `json:"endFreq"`           // End frequency of the span in Hz
-	Samples   []T       `json:"samples,omitempty"` // Ordered sequence of measurements in this span
+	Timestamp      time.Time `json:"timestamp"`         // When this span of measurements was taken
+	FrequencyStart float64   `json:"frequencyStart"`    // Start frequency of the span in Hz
+	FrequencyEnd   float64   `json:"frequencyEnd"`      // End frequency of the span in Hz
+	Samples        []T       `json:"samples,omitempty"` // Ordered sequence of measurements in this span
 }
