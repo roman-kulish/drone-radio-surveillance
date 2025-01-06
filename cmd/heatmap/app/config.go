@@ -158,7 +158,7 @@ func NewConfigFromCLI() (*Config, error) {
 			c.MaxFrequency = &maxFreq
 		}
 	}
-	if *c.MinFrequency > 0 && *c.MaxFrequency > 0 && *c.MinFrequency >= *c.MaxFrequency {
+	if c.MinFrequency != nil && c.MaxFrequency != nil && *c.MinFrequency >= *c.MaxFrequency {
 		errs = append(errs, errors.New("min-freq must be less than max-freq"))
 	}
 
