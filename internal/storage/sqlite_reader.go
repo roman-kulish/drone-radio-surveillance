@@ -194,23 +194,6 @@ func (sr *SqliteSpectrumReader[T]) loadSession(ctx context.Context) (err error) 
 }
 
 func (sr *SqliteSpectrumReader[T]) initFilters(ctx context.Context) (err error) {
-	timeFiltersSet := sr.startTime != nil && sr.endTime != nil
-	freqFiltersSet := sr.minFreq != nil && sr.maxFreq != nil
-
-	if timeFiltersSet {
-		if sr.startTime.After(*sr.endTime) {
-			return fmt.Errorf("start time %s is after end time %s", sr.startTime, sr.endTime)
-		}
-	}
-	if freqFiltersSet {
-		if *sr.minFreq > *sr.maxFreq {
-			return fmt.Errorf("min frequency %f is greater than max frequency %f", *sr.minFreq, *sr.maxFreq)
-		}
-	}
-	if timeFiltersSet && freqFiltersSet {
-		return nil
-	}
-
 	stmt, err := sr.db.PrepareContext(ctx, selectFilterValuesSQL)
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
@@ -223,19 +206,25 @@ func (sr *SqliteSpectrumReader[T]) initFilters(ctx context.Context) (err error) 
 		return fmt.Errorf("scanning filters data: %w", err)
 	}
 
-	if sr.minFreq == nil {
+	if sr.minFreq == nil || *sr.minFreq < minFreq {
 		sr.minFreq = &minFreq
 	}
-	if sr.maxFreq == nil {
+	if sr.maxFreq == nil || *sr.maxFreq > maxFreq {
 		sr.maxFreq = &maxFreq
 	}
-	if sr.startTime == nil {
+	if sr.startTime == nil || startTime.Datetime.After(*sr.startTime) {
 		sr.startTime = &startTime.Datetime
 	}
-	if sr.endTime == nil {
+	if sr.endTime == nil || endTime.Datetime.Before(*sr.endTime) {
 		sr.endTime = &endTime.Datetime
 	}
 
+	if *sr.minFreq > *sr.maxFreq {
+		return fmt.Errorf("min frequency %f is greater than max frequency %f", *sr.minFreq, *sr.maxFreq)
+	}
+	if sr.startTime.After(*sr.endTime) {
+		return fmt.Errorf("start time %s is after end time %s", sr.startTime, sr.endTime)
+	}
 	return nil
 }
 

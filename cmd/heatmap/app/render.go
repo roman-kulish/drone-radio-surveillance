@@ -22,7 +22,6 @@ const (
 	dpi            = 120.0
 	fontSize       = 12.0
 	tickMarkHeight = 5
-	pixelsPerLabel = 150.00
 
 	// Default border sizes in pixels
 	defaultTopBorder    = 40
@@ -156,6 +155,40 @@ func (r *SpectrumRenderer) renderSpectrum(img *image.RGBA, area image.Rectangle,
 			}
 		}
 	}
+
+	black := image.NewUniform(color.Black)
+
+	// Top line
+	draw.Draw(img, image.Rect(
+		area.Min.X,
+		area.Min.Y,
+		area.Max.X,
+		area.Min.Y+1,
+	), black, image.Point{}, draw.Src)
+
+	// Bottom line
+	draw.Draw(img, image.Rect(
+		area.Min.X,
+		area.Max.Y,
+		area.Max.X,
+		area.Max.Y-1,
+	), black, image.Point{}, draw.Src)
+
+	// Left line
+	draw.Draw(img, image.Rect(
+		area.Min.X,
+		area.Min.Y,
+		area.Min.X+1,
+		area.Max.Y,
+	), black, image.Point{}, draw.Src)
+
+	// Right line
+	draw.Draw(img, image.Rect(
+		area.Max.X,
+		area.Min.Y,
+		area.Max.X-1,
+		area.Max.Y,
+	), black, image.Point{}, draw.Src)
 }
 
 // Internal annotator implementation
@@ -222,7 +255,8 @@ func (a *annotator) annotate(img *image.RGBA, spec *SpectrumData) error {
 }
 
 func (a *annotator) drawFrequencyScale(img *image.RGBA, spec *SpectrumData) error {
-	freqStep := calculateNiceFrequencyStep(spec.FrequencyMax-spec.FrequencyMin, spec.Width)
+	minLabelWidth := font.MeasureString(a.fontFace, "999.99GHz").Round() * 2
+	freqStep := calculateNiceFrequencyStep(spec.FrequencyMax-spec.FrequencyMin, float64(spec.Width)/float64(minLabelWidth))
 	startFreq := math.Floor(spec.FrequencyMin/freqStep) * freqStep
 
 	// Get actual font height in pixels
@@ -255,18 +289,20 @@ func (a *annotator) drawFrequencyScale(img *image.RGBA, spec *SpectrumData) erro
 }
 
 func (a *annotator) drawTimeScale(img *image.RGBA, spec *SpectrumData) error {
+	// Get font metrics once
+	metrics := a.fontFace.Metrics()
+	fontHeight := (metrics.Ascent + metrics.Descent).Round()
+
+	minLabelHeight := float64(spec.Height) / float64(fontHeight*2)
+
 	duration := spec.TimestampEnd.Sub(spec.TimestampStart)
-	timeStep := calculateNiceTimeStep(duration)
+	timeStep := calculateNiceTimeStep(duration, minLabelHeight)
 
 	// Calculate pixels per second
 	pixelsPerSecond := float64(spec.Height) / duration.Seconds()
 
 	// Calculate pixel step based on time step
 	pixelStep := int(timeStep.Seconds() * pixelsPerSecond)
-
-	// Get font metrics once
-	metrics := a.fontFace.Metrics()
-	fontHeight := (metrics.Ascent + metrics.Descent).Round()
 
 	currentTime := spec.TimestampStart
 	for y := 0; y < spec.Height; y += pixelStep {
@@ -328,7 +364,7 @@ func (a *annotator) drawInfoBar(img *image.RGBA, spec *SpectrumData) error {
 
 // Helper functions
 
-func calculateNiceFrequencyStep(range_ float64, width int) float64 {
+func calculateNiceFrequencyStep(range_ float64, minWidth float64) float64 {
 	// Standard step sizes in Hz
 	steps := []float64{
 		1,             // 1 Hz
@@ -343,8 +379,7 @@ func calculateNiceFrequencyStep(range_ float64, width int) float64 {
 		1_000_000_000, // 1 GHz
 	}
 
-	desiredSteps := float64(width) / pixelsPerLabel
-	targetStep := range_ / desiredSteps
+	targetStep := range_ / minWidth
 
 	// Find the closest standard step size
 	for _, step := range steps {
@@ -379,9 +414,9 @@ func formatFrequencyRange(min, max float64) string {
 	return fmt.Sprintf("Freq: %s - %s", formatFrequency(min), formatFrequency(max))
 }
 
-func calculateNiceTimeStep(duration time.Duration) time.Duration {
+func calculateNiceTimeStep(duration time.Duration, minHeight float64) time.Duration {
 	seconds := duration.Seconds()
-	roughStep := seconds / 8 // Aim for about 8 time labels
+	roughStep := seconds / minHeight
 
 	// Nice time intervals in seconds
 	niceIntervals := []float64{
