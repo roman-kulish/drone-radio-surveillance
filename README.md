@@ -50,7 +50,6 @@ Configuration files are located in the `config/` directory.
 
 The configuration is divided into four main sections:
 
-1. **Global Settings**
 ```yaml
    settings:
       logLevel: "info"  # Logging verbosity (debug, info, warn, error)
@@ -101,7 +100,7 @@ Run the application with the config path:
 
 The heatmap tool is a visualization component of the Radio Surveillance Drone Platform designed to generate graphical representations of RF spectrum data collected during drone flights.
 
-![Heatmap Example](heatmap-hackrf.png)
+![Heatmap Example](heatmap-hackrf.jpg)
 
 #### Command-Line Arguments
 
