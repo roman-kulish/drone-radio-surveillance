@@ -1,44 +1,46 @@
 package app
 
-import (
-	"math"
-	"sync"
+import "math"
+
+const (
+	defaultMinPower = -120.0 // dBm
+	defaultMaxPower = -20.0  // dBm
+
+	// For 20 samples:
+	// - 5% percentile  = 1 sample
+	// - 95% percentile = 19th sample
+	minimumSampleCount = 20
 )
 
 // PowerBounds represents the calculated power boundaries
 type PowerBounds struct {
-	Min       float64
-	Max       float64
-	Mean      float64
-	Reference float64
+	Min       float64 // 5th percentile power level in dBm
+	Max       float64 // 95th percentile power level in dBm
+	Mean      float64 // Mean power level in dBm
+	Reference float64 // Reference level for visualization in dBm
 }
 
 func defaultPowerBounds() PowerBounds {
 	return PowerBounds{
-		Min:       -120,
-		Max:       -90,
-		Mean:      -105,
-		Reference: -105,
+		Min:       defaultMinPower,
+		Max:       defaultMaxPower,
+		Mean:      (defaultMinPower + defaultMaxPower) / 2,
+		Reference: (defaultMinPower + defaultMaxPower) / 2,
 	}
 }
 
 // PowerHistogram maintains a histogram of power values with 1dBm bins
 type PowerHistogram struct {
-	// Using int64 for counts to handle very large datasets
-	bins       map[int]int64 // Map of bin index to count
-	totalCount int64
-
-	// Cache for min/max to avoid map iteration
-	minBin int
-	maxBin int
-
-	mu sync.RWMutex
+	bins       map[int]uint32 // Map of bin index to count
+	totalCount uint64         // Total number of samples
+	minBin     int            // Cache for min bin
+	maxBin     int            // Cache for max bin
 }
 
 // NewPowerHistogram creates a new histogram
 func NewPowerHistogram() *PowerHistogram {
 	return &PowerHistogram{
-		bins:   make(map[int]int64),
+		bins:   make(map[int]uint32),
 		minBin: math.MaxInt32,
 		maxBin: math.MinInt32,
 	}
@@ -49,21 +51,45 @@ func getBinIndex(power float64) int {
 	return int(math.Floor(power)) // 1dBm bins
 }
 
+// scaleDown scales all bin counts down by factor of 2
+func (h *PowerHistogram) scaleDown() {
+	h.minBin = math.MaxInt32
+	h.maxBin = math.MinInt32
+
+	// Scale down all bins by factor of 2
+	for bin := range h.bins {
+		h.bins[bin] /= 2
+		// Remove bin if it becomes 0
+		if h.bins[bin] == 0 {
+			delete(h.bins, bin)
+		}
+
+		if bin < h.minBin {
+			h.minBin = bin
+		}
+		if bin > h.maxBin {
+			h.maxBin = bin
+		}
+	}
+	h.totalCount /= 2
+}
+
 // Update adds new power reading to the histogram
 func (h *PowerHistogram) Update(power *float64) {
 	if power == nil {
 		return
 	}
 
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Update bins
 	bin := getBinIndex(*power)
+
+	// Check both conditions for scaling
+	if h.bins[bin] == math.MaxUint32 || h.totalCount == math.MaxUint64 {
+		h.scaleDown()
+	}
+
 	h.bins[bin]++
 	h.totalCount++
 
-	// Update min/max bins
 	if bin < h.minBin {
 		h.minBin = bin
 	}
@@ -74,10 +100,7 @@ func (h *PowerHistogram) Update(power *float64) {
 
 // Clear resets the histogram
 func (h *PowerHistogram) Clear() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	h.bins = make(map[int]int64)
+	h.bins = make(map[int]uint32)
 	h.totalCount = 0
 	h.minBin = math.MaxInt32
 	h.maxBin = math.MinInt32
@@ -85,10 +108,7 @@ func (h *PowerHistogram) Clear() {
 
 // GetPercentileBounds returns power bounds based on percentiles
 func (h *PowerHistogram) GetPercentileBounds() PowerBounds {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	if h.totalCount == 0 {
+	if h.totalCount < minimumSampleCount { // Require minimum samples
 		return defaultPowerBounds()
 	}
 
@@ -96,12 +116,12 @@ func (h *PowerHistogram) GetPercentileBounds() PowerBounds {
 	target5th := h.totalCount * 5 / 100
 
 	// Find the bins corresponding to these percentiles
-	var count int64
+	var count uint64
 	var min5th, max95th int
 
 	// Find 5th percentile
 	for bin := h.minBin; bin <= h.maxBin; bin++ {
-		count += h.bins[bin]
+		count += uint64(h.bins[bin])
 		if count >= target5th {
 			min5th = bin
 			break
@@ -111,7 +131,7 @@ func (h *PowerHistogram) GetPercentileBounds() PowerBounds {
 	// Find 95th percentile
 	count = 0
 	for bin := h.maxBin; bin >= h.minBin; bin-- {
-		count += h.bins[bin]
+		count += uint64(h.bins[bin])
 		if count >= target5th {
 			max95th = bin
 			break
@@ -148,9 +168,8 @@ func (h *PowerHistogram) GetPercentileBounds() PowerBounds {
 // SmoothBounds represents a smoothed version of the histogram bounds
 type SmoothBounds struct {
 	hist    *PowerHistogram
-	alpha   float64
-	current PowerBounds
-	mu      sync.RWMutex
+	alpha   float64     // Smoothing factor (0-1)
+	current PowerBounds // Current smoothed bounds
 }
 
 // NewSmoothBounds creates a new bounds smoother
@@ -167,9 +186,6 @@ func (s *SmoothBounds) Update(power *float64) PowerBounds {
 	if power == nil {
 		return s.current
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	// Update histogram
 	s.hist.Update(power)
@@ -188,17 +204,11 @@ func (s *SmoothBounds) Update(power *float64) PowerBounds {
 
 // Current returns the current smoothed power bounds
 func (s *SmoothBounds) Current() PowerBounds {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	return s.current
 }
 
 // Clear resets the histogram and bounds
 func (s *SmoothBounds) Clear() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	s.hist.Clear()
 	s.current = defaultPowerBounds()
 }
