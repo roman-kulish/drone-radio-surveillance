@@ -3,11 +3,11 @@ package app
 import (
 	"context"
 	"fmt"
-	"image"
 	"image/jpeg"
 	"image/png"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/roman-kulish/radio-surveillance/internal/storage"
 )
@@ -20,18 +20,13 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 	store := storage.NewSqliteStore(config.DBPath)
 	defer store.Close()
 
-	spec, err := readSpectrum(ctx, store, config, logger)
-	if err != nil {
-		return fmt.Errorf("failed to read session data: %w", err)
-	}
-
-	return renderSpectrum(spec, config)
+	return readSpectrum(ctx, store, config, logger)
 }
 
-func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Config, logger *slog.Logger) (*SpectrumData, error) {
+func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Config, logger *slog.Logger) error {
 	iter, err := store.ReadSpectrum(ctx, config.SessionID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer iter.Close()
 
@@ -42,37 +37,33 @@ func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Confi
 		spec.Update(iter.Current())
 	}
 	if err = iter.Error(); err != nil {
-		return nil, err
+		return err
 	}
 
 	bounds := spec.BoundsTracker.Current()
 
 	logger.Info("finished reading data points",
-		slog.Int("image width", spec.Width),
-		slog.Int("image height", spec.Height),
-		slog.Float64("minFreq", spec.FrequencyMin),
-		slog.Float64("maxFreq", spec.FrequencyMax),
-		slog.Float64("minPower", bounds.Min),
-		slog.Float64("maxPower", bounds.Max))
+		slog.String("minTimestamp", spec.TimestampStart.Local().Format(time.DateTime)),
+		slog.String("maxTimestamp", spec.TimestampEnd.Local().Format(time.DateTime)),
+		slog.String("minFreq", fmt.Sprintf("%0.2fHz", spec.FrequencyMin)),
+		slog.String("maxFreq", fmt.Sprintf("%0.2fHz", spec.FrequencyMax)),
+		slog.String("minPower", fmt.Sprintf("%0.2fdB", bounds.Min)),
+		slog.String("maxPower", fmt.Sprintf("%02.fdB", bounds.Max)))
 
-	return spec, nil
-}
-
-func renderSpectrum(spec *SpectrumData, config *Config) error {
-	colorMap := NewColorMapper(config.Theme, spec.BoundsTracker.Current())
-	img := image.NewRGBA(image.Rect(0, 0, spec.Width, spec.Height))
-	for y, span := range spec.Spans {
-		for x, power := range span {
-			img.Set(x, y, colorMap.GetColor(power))
-		}
-	}
-
-	ann, err := NewAnnotator()
+	renderer, err := NewSpectrumRenderer(RenderConfig{
+		ColorTheme: config.Theme,
+	})
 	if err != nil {
-		return err
+		return fmt.Errorf("creating spectrum renderer: %w", err)
 	}
-	if err = ann.Annotate(img, spec); err != nil {
-		return err
+
+	logger.Info("rendering spectrum ...",
+		slog.Int("image width", spec.Width),
+		slog.Int("image height", spec.Height))
+
+	img, err := renderer.Render(spec)
+	if err != nil {
+		return fmt.Errorf("rendering spectrum: %w", err)
 	}
 
 	out, err := os.Create(config.OutputFile)

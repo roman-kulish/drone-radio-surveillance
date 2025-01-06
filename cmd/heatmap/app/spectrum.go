@@ -33,10 +33,10 @@ func (s *SpectrumData) Update(span *spectrum.SpectralSpan[spectrum.SpectralPoint
 	s.FrequencyMin = min(s.FrequencyMin, span.FrequencyStart)
 	s.FrequencyMax = max(s.FrequencyMax, span.FrequencyEnd)
 
-	if s.TimestampStart.After(span.Timestamp) {
+	if s.TimestampStart.IsZero() || s.TimestampStart.After(span.Timestamp) {
 		s.TimestampStart = span.Timestamp
 	}
-	if s.TimestampEnd.Before(span.Timestamp) {
+	if s.TimestampEnd.IsZero() || s.TimestampEnd.Before(span.Timestamp) {
 		s.TimestampEnd = span.Timestamp
 	}
 
