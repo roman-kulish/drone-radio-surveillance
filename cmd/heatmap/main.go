@@ -11,16 +11,11 @@ import (
 )
 
 func main() {
-	var logLevel slog.LevelVar
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: &logLevel}))
-
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	config, err := app.NewConfigFromCLI()
 	if err != nil {
 		logger.Error(err.Error())
 		os.Exit(1)
-	}
-	if config.Verbose {
-		logLevel.Set(slog.LevelDebug)
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -1,4 +1,3 @@
-// Package app provides spectrum visualization functionality
 package app
 
 import (
@@ -23,6 +22,7 @@ const (
 	dpi            = 120.0
 	fontSize       = 12.0
 	tickMarkHeight = 5
+	pixelsPerLabel = 150.00
 
 	// Default border sizes in pixels
 	defaultTopBorder    = 40
@@ -101,8 +101,6 @@ func (r *SpectrumRenderer) Render(spec *SpectrumData) (*image.RGBA, error) {
 	fullWidth := spec.Width + r.config.BorderConfig.Left + r.config.BorderConfig.Right
 	fullHeight := spec.Height + r.config.BorderConfig.Top + r.config.BorderConfig.Bottom
 	img := image.NewRGBA(image.Rect(0, 0, fullWidth, fullHeight))
-
-	fmt.Println("full height: ", fullHeight)
 
 	// Fill with white background
 	draw.Draw(img, img.Bounds(), image.White, image.Point{}, draw.Src)
@@ -224,7 +222,7 @@ func (a *annotator) annotate(img *image.RGBA, spec *SpectrumData) error {
 }
 
 func (a *annotator) drawFrequencyScale(img *image.RGBA, spec *SpectrumData) error {
-	freqStep := calculateNiceFrequencyStep(spec.FrequencyMax - spec.FrequencyMin)
+	freqStep := calculateNiceFrequencyStep(spec.FrequencyMax-spec.FrequencyMin, spec.Width)
 	startFreq := math.Floor(spec.FrequencyMin/freqStep) * freqStep
 
 	// Get actual font height in pixels
@@ -324,22 +322,23 @@ func (a *annotator) drawInfoBar(img *image.RGBA, spec *SpectrumData) error {
 
 // Helper functions
 
-func calculateNiceFrequencyStep(range_ float64) float64 {
+func calculateNiceFrequencyStep(range_ float64, width int) float64 {
 	// Standard step sizes in Hz
 	steps := []float64{
-		1,           // 1 Hz
-		10,          // 10 Hz
-		100,         // 100 Hz
-		1_000,       // 1 kHz
-		10_000,      // 10 kHz
-		100_000,     // 100 kHz
-		1_000_000,   // 1 MHz
-		10_000_000,  // 10 MHz
-		100_000_000, // 100 MHz
+		1,             // 1 Hz
+		10,            // 10 Hz
+		100,           // 100 Hz
+		1_000,         // 1 kHz
+		10_000,        // 10 kHz
+		100_000,       // 100 kHz
+		1_000_000,     // 1 MHz
+		10_000_000,    // 10 MHz
+		100_000_000,   // 100 MHz
+		1_000_000_000, // 1 GHz
 	}
 
-	// Aim for about 8 steps across the range
-	targetStep := range_ / 4.0
+	desiredSteps := float64(width) / pixelsPerLabel
+	targetStep := range_ / desiredSteps
 
 	// Find the closest standard step size
 	for _, step := range steps {

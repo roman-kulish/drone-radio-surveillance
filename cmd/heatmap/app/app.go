@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/roman-kulish/radio-surveillance/internal/spectrum"
 	"github.com/roman-kulish/radio-surveillance/internal/storage"
 )
 
@@ -24,7 +25,32 @@ func Run(ctx context.Context, config *Config, logger *slog.Logger) error {
 }
 
 func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Config, logger *slog.Logger) error {
-	iter, err := store.ReadSpectrum(ctx, config.SessionID)
+	type T = spectrum.SpectralPoint
+
+	var opts []storage.ReaderOption[T]
+	switch {
+	case config.MinFrequency != nil && config.MaxFrequency != nil:
+		opts = append(opts, storage.WithFreqRange[T](*config.MinFrequency, *config.MaxFrequency))
+
+	case config.MinFrequency != nil:
+		opts = append(opts, storage.WithMinFreq[T](*config.MinFrequency))
+
+	case config.MaxFrequency != nil:
+		opts = append(opts, storage.WithMaxFreq[T](*config.MaxFrequency))
+	}
+
+	switch {
+	case config.MinTimestamp != nil && config.MaxTimestamp != nil:
+		opts = append(opts, storage.WithTimeRange[T](config.MinTimestamp.UTC(), config.MaxTimestamp.UTC()))
+
+	case config.MinTimestamp != nil:
+		opts = append(opts, storage.WithStartTime[T](config.MinTimestamp.UTC()))
+
+	case config.MaxTimestamp != nil:
+		opts = append(opts, storage.WithEndTime[T](config.MaxTimestamp.UTC()))
+	}
+
+	iter, err := store.ReadSpectrum(ctx, config.SessionID, opts...)
 	if err != nil {
 		return err
 	}
@@ -51,6 +77,7 @@ func readSpectrum(ctx context.Context, store *storage.SqliteStore, config *Confi
 		slog.String("maxPower", fmt.Sprintf("%02.fdB", bounds.Max)))
 
 	renderer, err := NewSpectrumRenderer(RenderConfig{
+		Location:   config.TimeZone,
 		ColorTheme: config.Theme,
 	})
 	if err != nil {

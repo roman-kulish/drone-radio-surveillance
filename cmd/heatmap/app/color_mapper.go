@@ -1,4 +1,3 @@
-// Package app provides color mapping functionality for power spectrum visualization
 package app
 
 import (
