@@ -258,12 +258,18 @@ func (a *annotator) drawTimeScale(img *image.RGBA, spec *SpectrumData) error {
 	duration := spec.TimestampEnd.Sub(spec.TimestampStart)
 	timeStep := calculateNiceTimeStep(duration)
 
+	// Calculate pixels per second
+	pixelsPerSecond := float64(spec.Height) / duration.Seconds()
+
+	// Calculate pixel step based on time step
+	pixelStep := int(timeStep.Seconds() * pixelsPerSecond)
+
 	// Get font metrics once
 	metrics := a.fontFace.Metrics()
 	fontHeight := (metrics.Ascent + metrics.Descent).Round()
 
 	currentTime := spec.TimestampStart
-	for y := 0; y < spec.Height; y += int(timeStep.Seconds()) {
+	for y := 0; y < spec.Height; y += pixelStep {
 		imgY := y + a.config.Borders.Top
 
 		// Draw tick mark
